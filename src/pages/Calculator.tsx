@@ -46,23 +46,18 @@ import {
 } from "@/lib/db";
 import * as XLSX from 'xlsx';
 import { formatCurrency } from "@/lib/utils";
+import {
+  type AvailabilityStatus,
+  calculateConfigurationAvailability as calcAvailability,
+  calculateManualTotals as calcManualTotals,
+  calculateWarehouseAnalytics as calcWarehouseAnalytics,
+  type StockItem,
+} from "@/lib/calculator";
 import { useApp } from "@/contexts/AppContext";
 import { toast } from "@/hooks/use-toast";
 import { ItemLink } from "@/components/common/ItemLink";
-
-// Type definitions for better type safety
-type AvailabilityStatus = 'available' | 'partial' | 'unavailable' | 'missing';
-
-interface AvailabilityItem {
-  componentId: number;
-  quantity: number;
-  name: string;
-  available: number;
-  required: number;
-  status: AvailabilityStatus;
-  maxBuilds: number;
-  stockComponent: any | null;
-}
+import { AnalyticsTab } from "@/components/calculator/AnalyticsTab";
+import { ScrapTab } from "@/components/calculator/ScrapTab";
 
 // Empty arrays for clean start
 const mockComponents: any[] = [];
@@ -166,128 +161,32 @@ const Calculator = () => {
     });
   }, [search, priorityFilter, configurations]);
 
-  // Calculate availability for configurations
-  const calculateConfigurationAvailability = (config: any) => {
-    // Тип результата задан явно: config приходит как any, и без этого
-    // все последующие обходы массива теряли бы типы.
-    const availability: AvailabilityItem[] = config.components.map(
-      (comp: { componentId: number; quantity: number; name: string }) => {
-      const stockComponent = components.find(c => c.id === comp.componentId);
-      if (!stockComponent) return { 
-        ...comp, 
-        available: 0, 
-        required: comp.quantity,
-        status: 'missing' as const, 
-        maxBuilds: 0,
-        stockComponent: null
-      };
-      
-      // Резервирования больше нет: компоненты при сборке списываются,
-      // поэтому доступно ровно то, что лежит на складе.
-      const available = stockComponent.quantity;
-      const required = comp.quantity;
-      const maxBuilds = Math.floor(available / required);
-      const status: AvailabilityStatus = available >= required ? 'available' : available > 0 ? 'partial' : 'unavailable';
-      
-      return {
-        ...comp,
-        available,
-        required,
-        status,
-        maxBuilds,
-        stockComponent
-      };
-    });
+  // Расчёты живут в lib/calculator.ts — это чистые функции без React.
+  const calculateConfigurationAvailability = (config: any) =>
+    calcAvailability(config, components as StockItem[]);
 
-    const maxPossibleBuilds = availability.length > 0 ? Math.min(...availability.map(item => item.maxBuilds)) : 0;
-    const allAvailable = availability.every(item => item.status === 'available');
-    const anyAvailable = availability.some(item => item.status === 'available');
-    const noneAvailable = availability.every(item => item.status === 'unavailable');
+  const manualCalculations = useMemo(
+    () => calcManualTotals(selectedItems, components as StockItem[]),
+    [selectedItems, components]
+  );
 
-    return {
-      items: availability,
-      maxPossibleBuilds: maxPossibleBuilds > 0 ? maxPossibleBuilds : 0,
-      allAvailable,
-      anyAvailable,
-      noneAvailable,
-      availableCount: availability.filter(item => item.status === 'available').length,
-      totalCount: availability.length,
-      totalValue: config.totalValue * maxPossibleBuilds,
-      remainingComponents: availability.map(item => ({
-        ...item,
-        remaining: item.available - (item.required * maxPossibleBuilds)
-      }))
-    };
+  const warehouseAnalytics = useMemo(
+    () => calcWarehouseAnalytics(components as StockItem[], configurations),
+    [components, configurations]
+  );
+
+  const getPriorityBadge = (priority: string) => {
+    switch (priority) {
+      case 'high':
+        return <Badge variant="destructive">Р’С‹СЃРѕРєРёР№</Badge>;
+      case 'medium':
+        return <Badge variant="secondary" className="bg-yellow-500 text-yellow-900">РЎСЂРµРґРЅРёР№</Badge>;
+      case 'low':
+        return <Badge variant="outline">РќРёР·РєРёР№</Badge>;
+      default:
+        return null;
+    }
   };
-
-  // Calculate manual selection totals
-  const manualCalculations = useMemo(() => {
-    const totalValue = Object.entries(selectedItems).reduce((sum, [itemId, quantity]) => {
-      const item = components.find(i => i.id === parseInt(itemId));
-      return sum + (item ? item.price * quantity : 0);
-    }, 0);
-
-    const totalItems = Object.values(selectedItems).reduce((sum, qty) => sum + qty, 0);
-    
-    const categoryBreakdown = Object.entries(selectedItems).reduce((acc, [itemId, quantity]) => {
-      const item = components.find(i => i.id === parseInt(itemId));
-      if (item) {
-        acc[item.category] = (acc[item.category] || 0) + (item.price * quantity);
-      }
-      return acc;
-    }, {} as {[key: string]: number});
-
-    // Calculate stock warnings
-    const stockWarnings = Object.entries(selectedItems).map(([itemId, quantity]) => {
-      const item = components.find(i => i.id === parseInt(itemId));
-      if (!item) return null;
-      
-      const remaining = item.quantity - quantity;
-      const warningLevel = remaining <= item.minStock ? 'critical' : 
-                          remaining <= item.minStock * 2 ? 'warning' : 'ok';
-      
-      return {
-        item,
-        quantity,
-        remaining,
-        warningLevel
-      };
-    // filter(Boolean) не сужает тип, поэтому предикат задаётся явно —
-    // иначе ниже пришлось бы проверять на null то, чего там уже нет.
-    }).filter((w): w is NonNullable<typeof w> => w !== null);
-
-    return { totalValue, totalItems, categoryBreakdown, stockWarnings };
-  }, [selectedItems, components]);
-
-  // Warehouse analytics
-  const warehouseAnalytics = useMemo(() => {
-    const totalStockValue = components.reduce((sum, item) => sum + ((item.price || 0) * item.quantity), 0);
-    const lowStockItems = components.filter(item => item.quantity <= (item.minStock ?? 0));
-    const outOfStockItems = components.filter(item => item.quantity === 0);
-    
-    const configurationAnalytics = configurations.map(config => {
-      const availability = calculateConfigurationAvailability(config);
-      return {
-        config,
-        availability,
-        canBuild: availability.maxPossibleBuilds > 0,
-        priority: config.priority
-      };
-    });
-
-    const highPriorityConfigs = configurationAnalytics.filter(a => a.config.priority === 'high');
-    const canBuildHighPriority = highPriorityConfigs.filter(a => a.canBuild).length;
-
-    return {
-      totalStockValue,
-      lowStockItems,
-      outOfStockItems,
-      configurationAnalytics,
-      highPriorityConfigs,
-      canBuildHighPriority,
-      totalConfigurations: configurations.length
-    };
-  }, [components, configurations]);
 
   const updateQuantity = (itemId: number, quantity: number) => {
     // Validate quantity against available stock
@@ -352,55 +251,7 @@ const Calculator = () => {
   };
 
 
-  const getPriorityBadge = (priority: string) => {
-    switch (priority) {
-      case 'high':
-        return <Badge variant="destructive">Высокий</Badge>;
-      case 'medium':
-        return <Badge variant="secondary" className="bg-yellow-500 text-yellow-900">Средний</Badge>;
-      case 'low':
-        return <Badge variant="outline">Низкий</Badge>;
-      default:
-        return null;
-    }
-  };
-
   // Function to download warehouse report as Excel
-  const downloadWarehouseReport = () => {
-    // Prepare data for Excel
-    const excelData = components.map(item => ({
-      'Наименование': item.name,
-      'Категория': item.category,
-      'Количество (шт.)': item.quantity,
-      'Расположение': item.location,
-      'Цена (₽)': item.price || 0,
-      'Общая стоимость (₽)': (item.price || 0) * item.quantity,
-      'Последнее обновление': item.lastUpdated || 'Не указано'
-    }));
-    
-    // Create workbook and worksheet
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(excelData);
-    
-    // Set column widths
-    ws['!cols'] = [
-      { wch: 30 }, // Наименование
-      { wch: 20 }, // Категория
-      { wch: 15 }, // Количество
-      { wch: 20 }, // Расположение
-      { wch: 15 }, // Цена
-      { wch: 20 }, // Общая стоимость
-      { wch: 20 }  // Последнее обновление
-    ];
-    
-    // Add worksheet to workbook
-    XLSX.utils.book_append_sheet(wb, ws, 'Отчет по складу');
-    
-    // Generate and download file
-    const fileName = `warehouse_report_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(wb, fileName);
-  };
-
   const getAvailabilityIcon = (status: AvailabilityStatus) => {
     switch (status) {
       case 'available':
@@ -937,445 +788,20 @@ const Calculator = () => {
                 </div>
               </TabsContent>
 
-              <TabsContent value="scrap" className="space-y-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <XCircle className="h-5 w-5" />
-                      Списанные товары
-                    </CardTitle>
-                    <CardDescription>
-                      Отчет о списанных товарах с возможностью скачивания в Excel
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {scrappedItems.length === 0 ? (
-                      <div className="text-center py-12 text-muted-foreground">
-                        <XCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                        <p>Нет списанных товаров</p>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="rounded-lg border">
-                          <table className="w-full">
-                            <thead>
-                              <tr className="border-b bg-muted/50">
-                                <th className="p-3 text-left font-medium">Товар</th>
-                                <th className="p-3 text-left font-medium">Когда списано</th>
-                                <th className="p-3 text-left font-medium">Откуда</th>
-                                <th className="p-3 text-right font-medium">Количество</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {scrappedItems.map((item, index) => (
-                                <tr key={index} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                                  <td className="p-3">{item.componentName}</td>
-                                  <td className="p-3 text-muted-foreground">
-                                    {new Date(item.scrappedAt).toLocaleString('ru-RU')}
-                                  </td>
-                                  <td className="p-3 text-muted-foreground">{item.location}</td>
-                                  <td className="p-3 text-right font-medium">{item.quantity} шт.</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                        
-                        {/*
-                          Кнопка «Очистить список» убрана: списания — часть
-                          журнала, из которого выводятся остатки, и удаление
-                          записей рассогласовало бы склад. Ошибочное списание
-                          исправляется обратной операцией, а не забыванием.
-                        */}
-                        <div className="flex gap-2">
-                          <Button
-                            className="flex-1 transition-all duration-200 hover:scale-105"
-                            onClick={() => {
-                              // Download Excel report
-                              const excelData = scrappedItems.map(item => ({
-                                'Товар': item.componentName,
-                                'Когда списано': new Date(item.scrappedAt).toLocaleString('ru-RU'),
-                                'Откуда': item.location,
-                                'Количество (шт.)': item.quantity
-                              }));
-                              
-                              const wb = XLSX.utils.book_new();
-                              const ws = XLSX.utils.json_to_sheet(excelData);
-                              
-                              ws['!cols'] = [
-                                { wch: 30 },
-                                { wch: 20 },
-                                { wch: 20 },
-                                { wch: 15 }
-                              ];
-                              
-                              XLSX.utils.book_append_sheet(wb, ws, 'Списания');
-                              const fileName = `scrapped_items_${new Date().toISOString().split('T')[0]}.xlsx`;
-                              XLSX.writeFile(wb, fileName);
-                            }}
-                          >
-                            <FileText className="h-4 w-4 mr-2" />
-                            Скачать отчет Excel
-                          </Button>
-                        </div>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
+              <ScrapTab scrappedItems={scrappedItems} />
 
-              <TabsContent value="analytics" className="space-y-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Анализ запасов</CardTitle>
-                      <CardDescription>Критические компоненты и рекомендации</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div>
-                        <h4 className="font-medium mb-3">Компоненты с низким запасом</h4>
-                        <div className="space-y-2">
-                          {warehouseAnalytics.lowStockItems.map(item => (
-                            <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
-                              <div>
-                                <ItemLink 
-                                  itemId={item.id} 
-                                  itemName={item.name} 
-                                  variant="ghost" 
-                                  size="sm"
-                                  className="font-medium"
-                                />
-                                <div className="text-sm text-muted-foreground">
-                                  {item.category} • {item.location}
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <div className="font-medium text-red-600">{item.quantity} шт.</div>
-                                <div className="text-sm text-muted-foreground">мин: {item.minStock}</div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <Separator />
-
-                      <div>
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="font-medium">Отсутствующие компоненты</h4>
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="transition-all duration-200 hover:scale-105"
-                              onClick={() => {
-                                // Export to Excel
-                                const excelData = warehouseAnalytics.outOfStockItems.map((item: any) => ({
-                                  'Компонент': item.name,
-                                  'Категория': item.category,
-                                  'Расположение': item.location,
-                                  'Мин. запас': item.minStock ?? 0,
-                                  'Текущее кол-во (шт.)': item.quantity
-                                }));
-                                const wb = XLSX.utils.book_new();
-                                const ws = XLSX.utils.json_to_sheet(excelData);
-                                ws['!cols'] = [
-                                  { wch: 30 },
-                                  { wch: 20 },
-                                  { wch: 20 },
-                                  { wch: 12 },
-                                  { wch: 18 }
-                                ];
-                                XLSX.utils.book_append_sheet(wb, ws, 'Отсутствующие');
-                                const fileName = `out_of_stock_${new Date().toISOString().split('T')[0]}.xlsx`;
-                                XLSX.writeFile(wb, fileName);
-                              }}
-                            >
-                              <FileText className="h-4 w-4 mr-2" />
-                              Экспорт Excel
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="transition-all duration-200 hover:scale-105"
-                              onClick={() => setShowDetailedAnalytics(prev => !prev)}
-                            >
-                              {showDetailedAnalytics ? 'Свернуть' : 'Развернуть'}
-                            </Button>
-                          </div>
-                        </div>
-                        {showDetailedAnalytics && (
-                          <div className="space-y-2 max-h-64 overflow-y-auto">
-                            {warehouseAnalytics.outOfStockItems.map((item: any) => (
-                              <div
-                                key={item.id}
-                                className="flex items-center justify-between p-3 border rounded-lg bg-red-50 border-red-200 text-red-900"
-                              >
-                                <div>
-                                  <ItemLink 
-                                    itemId={item.id} 
-                                    itemName={item.name} 
-                                    variant="ghost" 
-                                    size="sm"
-                                    className="font-medium"
-                                  />
-                                  <div className="text-sm text-red-700/90">
-                                    {item.category} • {item.location}
-                                  </div>
-                                </div>
-                                <Badge variant="destructive" className="shrink-0">Нет в наличии</Badge>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Приоритетные конфигурации</CardTitle>
-                      <CardDescription>Статус высокоприоритетных сборок</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="text-center p-4 bg-primary/5 rounded-lg">
-                          <Target className="h-8 w-8 text-primary mx-auto mb-2" />
-                          <div className="text-2xl font-bold">{warehouseAnalytics.highPriorityConfigs.length}</div>
-                          <div className="text-sm text-muted-foreground">Всего высокоприоритетных</div>
-                        </div>
-                        <div className="text-center p-4 bg-green-50 rounded-lg">
-                          <CheckCircle className="h-8 w-8 text-green-600 mx-auto mb-2" />
-                          <div className="text-2xl font-bold text-green-600">{warehouseAnalytics.canBuildHighPriority}</div>
-                          <div className="text-sm text-muted-foreground">Можно собрать</div>
-                        </div>
-                      </div>
-
-                      <Separator />
-
-                      <div>
-                        <h4 className="font-medium mb-3">Детализация</h4>
-                        <div className="space-y-2">
-                          {warehouseAnalytics.highPriorityConfigs.map(({ config, availability }) => (
-                            <div key={config.id} className="flex items-center justify-between p-2 border rounded">
-                              <div>
-                                <div className="font-medium">{config.name}</div>
-                                <div className="text-sm text-muted-foreground">
-                                  {availability.availableCount}/{availability.totalCount} компонентов
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <div className="font-medium">{availability.maxPossibleBuilds}</div>
-                                <div className="text-sm text-muted-foreground">можно собрать</div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-
-                 {/* Planning Statistics Section */}
-                 {showPlanningStats && (
-                   <Card>
-                     <CardHeader>
-                       <CardTitle>Статистика планирования</CardTitle>
-                       <CardDescription>Детальная статистика по использованию компонентов и сборке конфигураций</CardDescription>
-                     </CardHeader>
-                     <CardContent>
-                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                         <div className="text-center p-4 bg-blue-50 rounded-lg">
-                           <TrendingDown className="h-8 w-8 text-blue-600 mx-auto mb-2" />
-                           <div className="text-2xl font-bold text-blue-600">{warehouseStats.totalScrapped || 0}</div>
-                           <div className="text-sm text-muted-foreground">Списано компонентов</div>
-                         </div>
-                         <div className="text-center p-4 bg-green-50 rounded-lg">
-                           <TrendingUp className="h-8 w-8 text-green-600 mx-auto mb-2" />
-                           <div className="text-2xl font-bold text-green-600">{warehouseStats.totalBuilds || 0}</div>
-                           <div className="text-sm text-muted-foreground">Собрано конфигураций</div>
-                         </div>
-                         <div className="text-center p-4 bg-purple-50 rounded-lg">
-                           <Package className="h-8 w-8 text-purple-600 mx-auto mb-2" />
-                           <div className="text-2xl font-bold text-purple-600">{warehouseStats.totalComponents || 0}</div>
-                           <div className="text-sm text-muted-foreground">Всего компонентов</div>
-                         </div>
-                         <div className="text-center p-4 bg-orange-50 rounded-lg">
-                           <Banknote className="h-8 w-8 text-orange-600 mx-auto mb-2" />
-                           <div className="text-2xl font-bold text-orange-600">{formatCurrency(warehouseStats.totalValue || 0)}</div>
-                           <div className="text-sm text-muted-foreground">Общая стоимость</div>
-                         </div>
-                       </div>
-                       
-                       <div className="flex justify-end gap-2 mb-4">
-                         <Button 
-                           size="sm" 
-                           variant="outline" 
-                           onClick={downloadWarehouseReport}
-                           className="transition-all duration-200 hover:scale-105"
-                         >
-                           <FileText className="h-4 w-4 mr-2" />
-                           Скачать отчет Excel
-                         </Button>
-                       </div>
-                     </CardContent>
-                   </Card>
-                 )}
-
-                 {/* Enhanced Analytics Section */}
-                 <Card>
-                   <CardHeader>
-                     <div className="flex items-center justify-between">
-                       <div>
-                         <CardTitle>Детальная аналитика склада</CardTitle>
-                         <CardDescription>Подробный анализ производительности и эффективности</CardDescription>
-                       </div>
-                       <Button
-                         variant="outline"
-                         size="sm"
-                         onClick={() => setShowDetailedAnalytics(!showDetailedAnalytics)}
-                       >
-                         {showDetailedAnalytics ? 'Свернуть' : 'Развернуть'}
-                       </Button>
-                     </div>
-                   </CardHeader>
-                   {showDetailedAnalytics && (
-                     <CardContent className="space-y-6">
-                       {/* Stock Turnover Analysis */}
-                       <div>
-                         <h4 className="font-medium mb-3">Оборачиваемость запасов</h4>
-                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                           <div className="text-center p-3 bg-blue-50 rounded-lg">
-                             <div className="text-lg font-bold text-blue-600">12.5</div>
-                             <div className="text-sm text-muted-foreground">Средняя оборачиваемость</div>
-                           </div>
-                           <div className="text-center p-3 bg-green-50 rounded-lg">
-                             <div className="text-lg font-bold text-green-600">85%</div>
-                             <div className="text-sm text-muted-foreground">Эффективность склада</div>
-                           </div>
-                           <div className="text-center p-3 bg-purple-50 rounded-lg">
-                             <div className="text-lg font-bold text-purple-600">3.2</div>
-                             <div className="text-sm text-muted-foreground">Дней до пополнения</div>
-                           </div>
-                           <div className="text-center p-3 bg-orange-50 rounded-lg">
-                             <div className="text-lg font-bold text-orange-600">92%</div>
-                             <div className="text-sm text-muted-foreground">Точность инвентаризации</div>
-                           </div>
-                         </div>
-                       </div>
-
-                       <Separator />
-
-                       {/* Category Performance */}
-                       <div>
-                         <h4 className="font-medium mb-3">Производительность по категориям</h4>
-                         <div className="space-y-3">
-                           {categories.map(category => {
-                             const categoryItems = components.filter(item => item.category === category);
-                             const totalValue = categoryItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-                             const avgStock = categoryItems.length > 0 ? categoryItems.reduce((sum, item) => sum + item.quantity, 0) / categoryItems.length : 0;
-                             
-                             return (
-                               <div key={category} className="flex items-center justify-between p-3 border rounded-lg">
-                                 <div className="flex items-center gap-3">
-                                   <Badge variant="secondary">{category}</Badge>
-                                   <span className="text-sm text-muted-foreground">
-                                     {categoryItems.length} компонентов
-                                   </span>
-                                 </div>
-                                 <div className="flex items-center gap-4 text-sm">
-                                   <span>Стоимость: {totalValue.toLocaleString()}₽</span>
-                                   <span>Средний запас: {Math.round(avgStock)} шт.</span>
-                                 </div>
-                               </div>
-                             );
-                           })}
-                         </div>
-                       </div>
-
-                       <Separator />
-
-                       {/* Configuration Efficiency */}
-                       <div>
-                         <h4 className="font-medium mb-3">Эффективность конфигураций</h4>
-                         <div className="space-y-3">
-                           {configurations.map(config => {
-                             const availability = calculateConfigurationAvailability(config);
-                             const efficiency = availability.totalCount > 0 ? (availability.availableCount / availability.totalCount) * 100 : 0;
-                             
-                             return (
-                               <div key={config.id} className="flex items-center justify-between p-3 border rounded-lg">
-                                 <div className="flex items-center gap-3">
-                                   <span className="font-medium">{config.name}</span>
-                                   {getPriorityBadge(config.priority)}
-                                 </div>
-                                 <div className="flex items-center gap-4">
-                                   <div className="text-center">
-                                     <div className="text-sm font-medium">{efficiency.toFixed(1)}%</div>
-                                     <div className="text-xs text-muted-foreground">Доступность</div>
-                                   </div>
-                                   <div className="text-center">
-                                     <div className="text-sm font-medium">{availability.maxPossibleBuilds}</div>
-                                     <div className="text-xs text-muted-foreground">Можно собрать</div>
-                                   </div>
-                                   <div className="text-center">
-                                     <div className="text-sm font-medium">{(config.totalValue * availability.maxPossibleBuilds).toLocaleString()}₽</div>
-                                     <div className="text-xs text-muted-foreground">Потенциальная выручка</div>
-                                   </div>
-                                 </div>
-                               </div>
-                             );
-                           })}
-                         </div>
-                       </div>
-
-                       <Separator />
-
-                       {/* Predictive Analytics */}
-                       <div>
-                         <h4 className="font-medium mb-3">Прогнозная аналитика</h4>
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                           <div className="p-4 border rounded-lg">
-                             <h5 className="font-medium mb-2">Прогноз спроса</h5>
-                             <div className="space-y-2 text-sm">
-                               <div className="flex justify-between">
-                                 <span>Следующие 7 дней:</span>
-                                 <span className="font-medium">+15%</span>
-                               </div>
-                               <div className="flex justify-between">
-                                 <span>Следующие 30 дней:</span>
-                                 <span className="font-medium">+8%</span>
-                               </div>
-                               <div className="flex justify-between">
-                                 <span>Следующие 90 дней:</span>
-                                 <span className="font-medium">+22%</span>
-                               </div>
-                             </div>
-                           </div>
-                           <div className="p-4 border rounded-lg">
-                             <h5 className="font-medium mb-2">Рекомендации по запасам</h5>
-                             <div className="space-y-2 text-sm">
-                               <div className="flex justify-between">
-                                 <span>Увеличить запасы:</span>
-                                 <span className="font-medium text-green-600">CPU, RAM</span>
-                               </div>
-                               <div className="flex justify-between">
-                                 <span>Снизить запасы:</span>
-                                 <span className="font-medium text-red-600">Кабели</span>
-                               </div>
-                               <div className="flex justify-between">
-                                 <span>Оптимизировать:</span>
-                                 <span className="font-medium text-blue-600">Видеокарты</span>
-                               </div>
-                             </div>
-                           </div>
-                         </div>
-                       </div>
-                     </CardContent>
-                   )}
-                 </Card>
-              </TabsContent>
+              <AnalyticsTab
+                warehouseAnalytics={warehouseAnalytics}
+                components={components as StockItem[]}
+                categories={categories}
+                configurations={configurations}
+                warehouseStats={warehouseStats}
+                calculateConfigurationAvailability={calculateConfigurationAvailability}
+                showDetailedAnalytics={showDetailedAnalytics}
+                setShowDetailedAnalytics={setShowDetailedAnalytics}
+                showPlanningStats={showPlanningStats}
+                getPriorityBadge={getPriorityBadge}
+              />
 
             </Tabs>
           </main>
