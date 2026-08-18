@@ -9,7 +9,6 @@ import { formatItemUpdateError } from "@/services/errorHandler";
 
 export interface UpdateItemResult {
   success: boolean;
-  scrappedQuantity?: number;
   error?: string;
   /** Краткое описание для пользователя */
   userMessage?: string;
@@ -48,7 +47,9 @@ function validateItemUpdate(
 
 /**
  * Обновляет параметры изделия (название, количество, склад, цену и т.д.).
- * При уменьшении количества автоматически создаётся запись о списании (в БД).
+ *
+ * Уменьшение количества здесь считается исправлением данных, а не списанием, и
+ * записей в scrapped_items не создаёт. Для списания есть отдельное действие.
  */
 export async function updateItem(
   itemId: number,
@@ -69,7 +70,6 @@ export async function updateItem(
 
     return {
       success: true,
-      scrappedQuantity: 0,
       userMessage: "Изделие успешно обновлено",
     };
   } catch (error) {

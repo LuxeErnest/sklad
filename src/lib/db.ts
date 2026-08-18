@@ -455,25 +455,21 @@ async function _upsertComponentInternal(c: {
   if (c.id) {
     // Update existing component
     return await executeTransaction(async (db) => {
-      // Get old quantity to track scrapping
-      const oldComponent = await db.select(
+      const oldComponent = await db.select<{ quantity: number; name: string; location: string }[]>(
         "SELECT quantity, name, location FROM components WHERE id=?",
         [c.id]
       );
-      
-      const oldQuantity = oldComponent && oldComponent.length > 0 ? oldComponent[0].quantity : 0;
-      const oldLocation = oldComponent && oldComponent.length > 0 ? oldComponent[0].location : c.location;
-      const quantityDiff = oldQuantity - c.quantity;
+
+      const oldQuantity = oldComponent?.[0]?.quantity ?? 0;
+      const oldLocation = oldComponent?.[0]?.location ?? c.location;
       const supplyDiff = c.quantity - oldQuantity;
 
-      // If quantity decreased, add to scrapped items
-      if (quantityDiff > 0) {
-        await db.execute(
-          "INSERT INTO scrapped_items (componentId, quantity, reason, scrappedAt, scrappedBy) VALUES (?,?,?,?,?)",
-          [c.id, quantityDiff, `Изменение количества при редактировании (было: ${oldQuantity}, стало: ${c.quantity})`, now, 'Пользователь']
-        );
-        console.log(`📝 Added ${quantityDiff} units to scrapped items`);
-      }
+      // Уменьшение количества при редактировании больше НЕ считается списанием.
+      // Раньше сюда автоматически писалась строка в scrapped_items, из-за чего
+      // исправление опечатки попадало в отчёт по списаниям наравне с настоящим
+      // выбытием товара. Списание выполняется отдельным действием
+      // (scrapFromLocation / scrapAllFromAllLocations + addScrappedItem).
+
       // If quantity increased, add to supply records
       if (supplyDiff > 0) {
         await db.execute(
@@ -1172,50 +1168,50 @@ export async function addComponentPath(payload: {
   stepPrice?: number;
   stepType: 'purchase' | 'transfer' | 'processing' | 'storage';
 }) {
-  try {
-    return await withDb(async (db) => {
-      const existingPaths = await db.select<any[]>(`
-        SELECT stepOrder FROM component_paths 
-        WHERE componentId = ? 
-        ORDER BY stepOrder DESC LIMIT 1
-      `, [payload.componentId]);
-      const nextOrder = existingPaths.length > 0 ? existingPaths[0].stepOrder + 1 : 1;
-      const stepDate = new Date().toISOString();
-      await db.execute(`
-        INSERT INTO component_paths (componentId, stepOrder, stepName, stepDescription, stepLocation, stepQuantity, stepPrice, stepDate, stepType)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        payload.componentId, nextOrder, payload.stepName, payload.stepDescription || null,
-        payload.stepLocation || null, payload.stepQuantity || null, payload.stepPrice || null,
-        stepDate, payload.stepType
-      ]);
-      if (payload.stepLocation && payload.stepQuantity && payload.stepQuantity > 0) {
-        const existingGroups = await db.select<any[]>(`
-          SELECT * FROM component_groups 
-          WHERE componentId = ? AND location = ? AND (price = ? OR (price IS NULL AND ? IS NULL))
-        `, [payload.componentId, payload.stepLocation, payload.stepPrice, payload.stepPrice]);
-        if (existingGroups.length === 0) {
-          await addComponentGroup({
-            componentId: payload.componentId,
-            name: `${payload.stepName} - ${payload.stepLocation}`,
-            location: payload.stepLocation,
-            quantity: payload.stepQuantity,
-            price: payload.stepPrice
-          });
-        } else {
-          await db.execute(`
-            UPDATE component_groups SET quantity = quantity + ?, updatedAt = ? WHERE id = ?
-          `, [payload.stepQuantity, stepDate, existingGroups[0].id]);
-        }
+  return await withDb(async (db) => {
+    const existingPaths = await db.select<any[]>(`
+      SELECT stepOrder FROM component_paths
+      WHERE componentId = ?
+      ORDER BY stepOrder DESC LIMIT 1
+    `, [payload.componentId]);
+    const nextOrder = existingPaths.length > 0 ? existingPaths[0].stepOrder + 1 : 1;
+    const stepDate = new Date().toISOString();
+    const inserted = await db.execute(`
+      INSERT INTO component_paths (componentId, stepOrder, stepName, stepDescription, stepLocation, stepQuantity, stepPrice, stepDate, stepType)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      payload.componentId, nextOrder, payload.stepName, payload.stepDescription || null,
+      payload.stepLocation || null, payload.stepQuantity || null, payload.stepPrice || null,
+      stepDate, payload.stepType
+    ]);
+    if (payload.stepLocation && payload.stepQuantity && payload.stepQuantity > 0) {
+      const existingGroups = await db.select<any[]>(`
+        SELECT * FROM component_groups
+        WHERE componentId = ? AND location = ? AND (price = ? OR (price IS NULL AND ? IS NULL))
+      `, [payload.componentId, payload.stepLocation, payload.stepPrice, payload.stepPrice]);
+      if (existingGroups.length === 0) {
+        // Раньше здесь вызывалась публичная addComponentGroup, которая берёт
+        // соединение своим withDb. В пуле одно соединение, и оно уже занято
+        // текущим вызовом — внутренний уходил в ожидание на 100 попыток,
+        // падал, а catch возвращал Date.now() как признак успеха. Итог:
+        // несколько секунд подвисания и молча не созданная группа.
+        await addComponentGroupOn(db, {
+          componentId: payload.componentId,
+          name: `${payload.stepName} - ${payload.stepLocation}`,
+          location: payload.stepLocation,
+          quantity: payload.stepQuantity,
+          price: payload.stepPrice
+        });
+      } else {
+        await db.execute(`
+          UPDATE component_groups SET quantity = quantity + ?, updatedAt = ? WHERE id = ?
+        `, [payload.stepQuantity, stepDate, existingGroups[0].id]);
       }
-      dbCache.invalidate(`component_${payload.componentId}_paths`);
-      dbCache.invalidate(`component_${payload.componentId}_groups`);
-      return Date.now();
-    });
-  } catch (error) {
-    console.error('❌ Error adding component path:', error);
-    return Date.now();
-  }
+    }
+    dbCache.invalidate(`component_${payload.componentId}_paths`);
+    dbCache.invalidate(`component_${payload.componentId}_groups`);
+    return inserted.lastInsertId;
+  });
 }
 
 // Component groups functions
@@ -1253,27 +1249,45 @@ export async function getComponentGroups(componentId: number) {
   }
 }
 
-// Function to clean up duplicate groups
+/**
+ * Схлопывает группы-дубли по паре «место хранения, цена».
+ *
+ * Количество из удаляемых групп переносится в остающуюся. Раньше лишние группы
+ * просто удалялись, и их количество пропадало со склада — каждый вызов молча
+ * уменьшал остатки.
+ */
 export async function cleanupDuplicateGroups(componentId: number) {
-  try {
-    await withDb(async (db) => {
-      const duplicates = await db.select<any[]>(`
-        SELECT location, price, COUNT(*) as count, GROUP_CONCAT(id) as ids
-        FROM component_groups 
-        WHERE componentId = ?
-        GROUP BY location, price
-        HAVING COUNT(*) > 1
-      `, [componentId]);
-      for (const duplicate of duplicates) {
-        const ids = duplicate.ids.split(',').map((id: string) => parseInt(id.trim()));
-        for (const idToDelete of ids.slice(1)) {
-          await db.execute('DELETE FROM component_groups WHERE id = ?', [idToDelete]);
-        }
+  return await withDb(async (db) => {
+    const duplicates = await db.select<{ ids: string; total: number }[]>(`
+      SELECT GROUP_CONCAT(id) as ids, SUM(quantity) as total
+      FROM component_groups
+      WHERE componentId = ?
+      GROUP BY location, price
+      HAVING COUNT(*) > 1
+    `, [componentId]);
+
+    let merged = 0;
+    for (const duplicate of duplicates || []) {
+      const ids = String(duplicate.ids)
+        .split(',')
+        .map((id) => parseInt(id.trim(), 10))
+        .filter((id) => Number.isFinite(id));
+      if (ids.length < 2) continue;
+
+      const [keep, ...drop] = ids;
+      await db.execute(
+        'UPDATE component_groups SET quantity = ?, updatedAt = ? WHERE id = ?',
+        [duplicate.total, new Date().toISOString(), keep]
+      );
+      for (const idToDelete of drop) {
+        await db.execute('DELETE FROM component_groups WHERE id = ?', [idToDelete]);
       }
-    });
-  } catch (error) {
-    console.error('❌ Error cleaning up duplicates:', error);
-  }
+      merged += drop.length;
+    }
+
+    dbCache.invalidate(`component_${componentId}_groups`);
+    return merged;
+  });
 }
 
 // Scrap from specific location
@@ -1313,27 +1327,37 @@ export async function scrapAllFromAllLocations(componentId: number) {
   });
 }
 
-export async function addComponentGroup(payload: {
+interface ComponentGroupPayload {
   componentId: number;
   name: string;
   location: string;
   quantity: number;
   price?: number;
-}) {
-  if (!isTauriRuntime()) return Date.now();
-  await withDb(async (db) => {
-    const now = new Date().toISOString();
-    await db.execute(`
-      INSERT INTO component_groups (componentId, name, location, quantity, price, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [
-      payload.componentId, payload.name, payload.location, payload.quantity,
-      payload.price || null, now, now
-    ]);
-    dbCache.invalidate(`component_${payload.componentId}_paths`);
-    dbCache.invalidate(`component_${payload.componentId}_groups`);
-  });
-  return Date.now();
+}
+
+/**
+ * Вариант для работы на уже открытом соединении.
+ *
+ * В пуле одно соединение, поэтому функция, вызванная изнутри другой функции,
+ * не может взять своё — получится взаимоблокировка. Все операции, которые
+ * нужно выполнять в связке, должны идти через такие внутренние варианты.
+ */
+async function addComponentGroupOn(db: Database, payload: ComponentGroupPayload) {
+  const now = new Date().toISOString();
+  const inserted = await db.execute(`
+    INSERT INTO component_groups (componentId, name, location, quantity, price, createdAt, updatedAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `, [
+    payload.componentId, payload.name, payload.location, payload.quantity,
+    payload.price ?? null, now, now
+  ]);
+  dbCache.invalidate(`component_${payload.componentId}_paths`);
+  dbCache.invalidate(`component_${payload.componentId}_groups`);
+  return inserted.lastInsertId;
+}
+
+export async function addComponentGroup(payload: ComponentGroupPayload) {
+  return await withDb((db) => addComponentGroupOn(db, payload));
 }
 
 export async function updateComponentGroup(payload: {
@@ -1343,8 +1367,7 @@ export async function updateComponentGroup(payload: {
   quantity?: number;
   price?: number;
 }) {
-  if (!isTauriRuntime()) return Date.now();
-  await withDb(async (db) => {
+  return await withDb(async (db) => {
     const now = new Date().toISOString();
     const updates: string[] = [];
     const values: (string | number)[] = [];
@@ -1354,9 +1377,10 @@ export async function updateComponentGroup(payload: {
     if (payload.price !== undefined) { updates.push('price = ?'); values.push(payload.price); }
     updates.push('updatedAt = ?');
     values.push(now, payload.groupId);
-    await db.execute(`UPDATE component_groups SET ${updates.join(', ')} WHERE id = ?`, values);
+    const result = await db.execute(`UPDATE component_groups SET ${updates.join(', ')} WHERE id = ?`, values);
+    dbCache.invalidate('component_');
+    return result.rowsAffected;
   });
-  return Date.now();
 }
 
 // Documents persistence
@@ -1523,10 +1547,9 @@ export async function addScrappedItem(payload: {
   scrappedBy?: string;
   updateQuantity?: boolean; // Optional flag to control quantity update
 }) {
-  if (!isTauriRuntime()) return Date.now();
-  await withDb(async (db) => {
+  const scrappedId = await withDb(async (db) => {
     const scrappedAt = new Date().toISOString();
-    await db.execute(
+    const inserted = await db.execute(
       "INSERT INTO scrapped_items (componentId, quantity, reason, scrappedAt, scrappedBy) VALUES (?,?,?,?,?)",
       [payload.componentId, payload.quantity, payload.reason || null, scrappedAt, payload.scrappedBy || null]
     );
@@ -1536,6 +1559,7 @@ export async function addScrappedItem(payload: {
         [payload.quantity, payload.componentId]
       );
     }
+    return inserted.lastInsertId;
   });
   await addComponentUsageHistory({
     componentId: payload.componentId,
@@ -1543,8 +1567,10 @@ export async function addScrappedItem(payload: {
     operationType: 'scrapped',
     notes: payload.reason
   });
+  dbCache.invalidateComponent(payload.componentId);
+  dbCache.invalidate('components_list');
   try { window.dispatchEvent(new CustomEvent('componentsUpdated')); } catch {}
-  return Date.now();
+  return scrappedId;
 }
 
 // Purchase recommendations functions
@@ -1565,15 +1591,14 @@ export async function addPurchaseRecommendation(payload: {
   reason?: string;
   isUrgent?: boolean;
 }) {
-  if (!isTauriRuntime()) return Date.now();
-  await withDb(async (db) => {
+  return await withDb(async (db) => {
     const createdAt = new Date().toISOString();
-    await db.execute(
+    const inserted = await db.execute(
       "INSERT INTO purchase_recommendations (componentId, recommendedQuantity, priority, reason, createdAt, isUrgent) VALUES (?,?,?,?,?,?)",
       [payload.componentId, payload.recommendedQuantity, payload.priority || 'medium', payload.reason || null, createdAt, payload.isUrgent ? 1 : 0]
     );
+    return inserted.lastInsertId;
   });
-  return Date.now();
 }
 
 // Component usage history functions
@@ -1600,15 +1625,14 @@ export async function addComponentUsageHistory(payload: {
   configurationId?: number;
   notes?: string;
 }) {
-  if (!isTauriRuntime()) return Date.now();
-  await withDb(async (db) => {
+  return await withDb(async (db) => {
     const createdAt = new Date().toISOString();
-    await db.execute(
+    const inserted = await db.execute(
       "INSERT INTO component_usage_history (componentId, quantity, operationType, configurationId, notes, createdAt) VALUES (?,?,?,?,?,?)",
       [payload.componentId, payload.quantity, payload.operationType, payload.configurationId || null, payload.notes || null, createdAt]
     );
+    return inserted.lastInsertId;
   });
-  return Date.now();
 }
 
 // Configuration builds functions
@@ -1628,15 +1652,14 @@ export async function addConfigurationBuild(payload: {
   builtBy?: string;
   notes?: string;
 }) {
-  if (!isTauriRuntime()) return Date.now();
-  await withDb(async (db) => {
+  return await withDb(async (db) => {
     const builtAt = new Date().toISOString();
-    await db.execute(
+    const inserted = await db.execute(
       "INSERT INTO configuration_builds (configurationId, quantity, builtAt, builtBy, notes) VALUES (?,?,?,?,?)",
       [payload.configurationId, payload.quantity, builtAt, payload.builtBy || null, payload.notes || null]
     );
+    return inserted.lastInsertId;
   });
-  return Date.now();
 }
 
 /** Текущее количество собранных единиц по конфигурациям (configurationId -> quantity) */
