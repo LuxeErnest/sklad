@@ -1,6 +1,6 @@
 import Sidebar from "@/components/layout/Sidebar";
 import TopBar from "@/components/layout/TopBar";
-import BackgroundGlow from "@/components/common/BackgroundGlow";
+import UniversalBackground from "@/components/UniversalBackground";
 import Seo from "@/components/seo/Seo";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,13 +11,31 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Pencil, Trash2, Plus, Search, Filter } from "lucide-react";
+import { Pencil, Trash2, Plus, Search, Filter, FolderTree, Tag, Archive } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useState, useMemo, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 
-import { getComponents, upsertComponent, deleteComponent } from "@/lib/db";
+import { upsertComponent, archiveComponent, addScrappedItem, getComponentGroups, scrapFromLocation, scrapAllFromAllLocations } from "@/lib/db";
+import { updateItem } from "@/services/inventoryService";
+import { logAndFormatError, getErrorMessage } from "@/services/errorHandler";
+import { toast } from "@/hooks/use-toast";
+import { useApp } from "@/contexts/AppContext";
+import { useSearchParams } from "react-router-dom";
+import { CategoriesModal } from "@/components/edit/CategoriesModal";
+import { TagsModal } from "@/components/edit/TagsModal";
+import { TagsManager } from "@/components/settings/TagsManager";
 // Fallback mock only if DB empty
 const mockItems = [
   { id: 1, name: "SSD 1TB", quantity: 12, category: "Накопители", location: "Склад А-12", lastUpdated: "2025-08-01", description: "Твердотельный накопитель 1TB", website: "https://example.com/ssd", price: 150 },
@@ -36,13 +54,37 @@ const formSchema = z.object({
 type FormData = z.infer<typeof formSchema>;
 
 const Edit = () => {
+  const { items, categories, refreshItems, getItemById } = useApp();
+  const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [items, setItems] = useState(mockItems);
   const [editingItem, setEditingItem] = useState<typeof mockItems[0] | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [scrapItem, setScrapItem] = useState<typeof mockItems[0] | null>(null);
+  const [isScrapDialogOpen, setIsScrapDialogOpen] = useState(false);
+  const [scrapQuantity, setScrapQuantity] = useState("");
+  const [scrapLocation, setScrapLocation] = useState("");
+  const [scrapReason, setScrapReason] = useState("");
+  const [availableGroups, setAvailableGroups] = useState<any[]>([]);
+  const [categoriesModalOpen, setCategoriesModalOpen] = useState(false);
+  const [tagsModalOpen, setTagsModalOpen] = useState(false);
+  const [tagsManagerModalOpen, setTagsManagerModalOpen] = useState(false);
+  // Намеренно узкий тип: архивированию нужны только идентификатор и название.
+  // Полный typeof mockItems[0] здесь не подходит — InventoryItem из БД не имеет
+  // поля website, из-за чего присваивание не проходит по типам.
+  const [itemToArchive, setItemToArchive] = useState<{ id: number; name: string } | null>(null);
 
-  const categories = useMemo(() => Array.from(new Set(items.map(item => item.category))), [items]);
+  // Auto-select item from URL parameter
+  useEffect(() => {
+    const itemIdParam = searchParams.get('itemId');
+    if (itemIdParam) {
+      const itemId = parseInt(itemIdParam);
+      const item = getItemById(itemId);
+      if (item) {
+        handleEdit(item as any);
+      }
+    }
+  }, [searchParams, getItemById]);
 
   const filteredItems = useMemo(() => {
     return items.filter(item => {
@@ -66,32 +108,60 @@ const Edit = () => {
     },
   });
 
+  const categoryOptions = useMemo(() => {
+    const list = [...categories];
+    const current = editingItem?.category || form.watch("category");
+    if (current && !list.includes(current)) list.push(current);
+    return list;
+  }, [categories, editingItem?.category, form.watch("category")]);
+
+  // Items are loaded from context, no need to load separately
   useEffect(() => {
-    (async () => {
-      try {
-        const rows = await getComponents();
-        if (rows && Array.isArray(rows) && rows.length > 0) {
-          setItems(rows as any);
-        }
-      } catch {}
-    })();
-  }, []);
+    refreshItems();
+  }, [refreshItems]);
 
   const onSubmit = async (data: FormData) => {
-    if (editingItem) {
-      const id = await upsertComponent({
-        id: editingItem.id,
-        name: data.name,
-        category: data.category,
-        location: data.location,
-        quantity: data.quantity,
-        price: data.price,
-      } as any);
-      setItems(prev => prev.map(item => item.id === id ? { ...item, ...data, lastUpdated: new Date().toISOString().split('T')[0] } as any : item));
+    try {
+      if (editingItem) {
+        const result = await updateItem(
+          editingItem.id,
+          data.quantity,
+          {
+            name: data.name,
+            category: data.category,
+            location: data.location,
+            price: data.price,
+            description: data.description,
+            url: data.website,
+          }
+        );
+
+        if (result.success) {
+          await refreshItems();
+          toast({ title: result.userMessage ?? "Товар успешно обновлён" });
+          setIsEditDialogOpen(false);
+          setEditingItem(null);
+          form.reset();
+        } else {
+          toast({
+            title: "Ошибка сохранения",
+            description: result.userMessage ?? result.error ?? "Не удалось обновить товар",
+            variant: "destructive",
+          });
+        }
+      } else {
+        setIsEditDialogOpen(false);
+        setEditingItem(null);
+        form.reset();
+      }
+    } catch (error) {
+      const errorMessage = logAndFormatError(error, "обновление товара");
+      toast({
+        title: "Ошибка при сохранении",
+        description: errorMessage,
+        variant: "destructive",
+      });
     }
-    setIsEditDialogOpen(false);
-    setEditingItem(null);
-    form.reset();
   };
 
   const handleEdit = (item: typeof mockItems[0]) => {
@@ -108,10 +178,109 @@ const Edit = () => {
     setIsEditDialogOpen(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (confirm("Вы уверены, что хотите удалить этот компонент?")) {
-      await deleteComponent(id);
-      setItems(prev => prev.filter(item => item.id !== id));
+  const handleArchiveConfirm = async () => {
+    if (!itemToArchive) return;
+    const item = itemToArchive;
+    setItemToArchive(null);
+    try {
+      await archiveComponent(item.id);
+      toast({
+        title: "Изделие в архиве",
+        description: `«${item.name}» убрано из списка. История сохранена, восстановить можно в настройках.`,
+      });
+      await refreshItems();
+    } catch (error) {
+      console.error('Ошибка архивирования:', error);
+      toast({
+        title: "Не удалось архивировать",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleScrap = async (item: typeof mockItems[0]) => {
+    setScrapItem(item);
+    setScrapQuantity("");
+    setScrapLocation("");
+    setScrapReason("");
+    
+    // Load available groups for this component
+    try {
+      const groups = await getComponentGroups(item.id);
+      setAvailableGroups(groups);
+    } catch (error) {
+      console.error('Error loading groups:', error);
+      setAvailableGroups([]);
+    }
+    
+    setIsScrapDialogOpen(true);
+  };
+
+  const handleScrapSubmit = async () => {
+    if (!scrapItem || !scrapQuantity) {
+      alert("Заполните количество для списания");
+      return;
+    }
+
+    const quantity = parseInt(scrapQuantity);
+    if (quantity <= 0) {
+      alert("Количество должно быть больше 0");
+      return;
+    }
+
+    // Проверяем, нужно ли выбирать склад (только если списываем не все)
+    const isScrapAll = quantity === scrapItem.quantity;
+    if (!isScrapAll && !scrapLocation) {
+      alert("Выберите склад для списания");
+      return;
+    }
+
+    try {
+      if (isScrapAll) {
+        // Списание всего количества со всех складов
+        console.log(`🗑️ Scrapping all ${quantity} items from all locations for component ${scrapItem.id}`);
+        
+        // Delete all groups for this component
+        await scrapAllFromAllLocations(scrapItem.id);
+        
+        // Add to scrapped items report (don't update quantity - already done by scrapAllFromAllLocations)
+        await addScrappedItem({
+          componentId: scrapItem.id,
+          quantity: quantity,
+          reason: scrapReason || "Полное списание со всех складов",
+          scrappedBy: "Пользователь",
+          updateQuantity: false
+        });
+
+        alert(`Списано все количество (${quantity} шт.) товара "${scrapItem.name}" со всех складов`);
+      } else {
+        // Списание частичного количества с конкретного склада
+        console.log(`🗑️ Scrapping ${quantity} items from location ${scrapLocation} for component ${scrapItem.id}`);
+        
+        // Update group quantity or delete if reaches 0
+        await scrapFromLocation(scrapItem.id, scrapLocation, quantity);
+        
+        // Add to scrapped items report (don't update quantity - already done by scrapFromLocation)
+        await addScrappedItem({
+          componentId: scrapItem.id,
+          quantity: quantity,
+          reason: scrapReason || `Списание со склада ${scrapLocation}`,
+          scrappedBy: "Пользователь",
+          updateQuantity: false
+        });
+
+        alert(`Списано ${quantity} шт. товара "${scrapItem.name}" со склада ${scrapLocation}`);
+      }
+
+      setIsScrapDialogOpen(false);
+      setScrapItem(null);
+      
+      // Reload items from context
+      await refreshItems();
+    } catch (error) {
+      console.error('Error scrapping item:', error);
+      alert(`Ошибка при списании:\n\n${getErrorMessage(error)}`);
     }
   };
 
@@ -131,7 +300,7 @@ const Edit = () => {
       />
 
       <div className="absolute inset-0 -z-10">
-        <BackgroundGlow />
+        <UniversalBackground />
       </div>
 
       <div className="grid grid-cols-[auto_1fr]">
@@ -150,12 +319,12 @@ const Edit = () => {
 
             <Card>
               <CardHeader>
-                <CardTitle>Фильтры</CardTitle>
-                <CardDescription>Настройте фильтры для поиска нужных компонентов</CardDescription>
+                <CardTitle>Фильтры и управление</CardTitle>
+                <CardDescription>Настройте фильтры и управляйте тегами и категориями</CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="flex gap-4">
-                  <div className="flex-1">
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap gap-4">
+                  <div className="flex-1 min-w-[200px]">
                     <Label htmlFor="category-filter">Категория</Label>
                     <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                       <SelectTrigger>
@@ -169,6 +338,16 @@ const Edit = () => {
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+                <div className="flex flex-wrap gap-2 pt-2 border-t">
+                  <Button type="button" variant="outline" onClick={() => setTagsManagerModalOpen(true)}>
+                    <Tag className="h-4 w-4 mr-2" />
+                    Управление тегами
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => setCategoriesModalOpen(true)}>
+                    <FolderTree className="h-4 w-4 mr-2" />
+                    Управление категориями
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -224,9 +403,18 @@ const Edit = () => {
                             <Button
                               size="sm"
                               variant="destructive"
-                              onClick={() => handleDelete(item.id)}
+                              onClick={() => handleScrap(item)}
+                              title="Списать"
                             >
                               <Trash2 className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setItemToArchive(item)}
+                              title="Убрать в архив"
+                            >
+                              <Archive className="h-4 w-4" />
                             </Button>
                           </div>
                         </TableCell>
@@ -278,16 +466,21 @@ const Edit = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="category">Категория *</Label>
-                <Select value={form.watch("category")} onValueChange={(value) => form.setValue("category", value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Выберите категорию" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map(cat => (
-                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex gap-2">
+                  <Select value={form.watch("category") || ""} onValueChange={(value) => form.setValue("category", value)}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Выберите категорию" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categoryOptions.map(cat => (
+                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button type="button" variant="outline" size="icon" onClick={() => setCategoriesModalOpen(true)} title="Управление категориями">
+                    <FolderTree className="h-4 w-4" />
+                  </Button>
+                </div>
                 {form.formState.errors.category && (
                   <p className="text-sm text-destructive">{form.formState.errors.category.message}</p>
                 )}
@@ -303,6 +496,11 @@ const Edit = () => {
                   <p className="text-sm text-destructive">{form.formState.errors.location.message}</p>
                 )}
               </div>
+            </div>
+            <div>
+              <Button type="button" variant="outline" onClick={() => setTagsModalOpen(true)}>
+                <Tag className="h-4 w-4 mr-1" /> Теги изделия
+              </Button>
             </div>
 
             <div>
@@ -331,9 +529,28 @@ const Edit = () => {
                 <Label htmlFor="price">Цена (₽)</Label>
                 <Input
                   id="price"
-                  type="number"
-                  {...form.register("price", { valueAsNumber: true })}
-                  placeholder="0"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  defaultValue={editingItem?.price?.toFixed?.(2) ?? ''}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const sanitized = raw
+                      .replace(/[^0-9.]/g, '')
+                      .replace(/(\..*)\./g, '$1');
+                    const parts = sanitized.split('.');
+                    const limited = parts.length === 2 ? parts[0] + '.' + parts[1].slice(0, 2) : parts[0];
+                    const num = limited === '' || limited === '.' ? undefined : Number(limited);
+                    form.setValue('price', Number.isFinite(num as number) ? (num as number) : undefined, { shouldValidate: true });
+                    e.currentTarget.value = limited;
+                  }}
+                  onBlur={(e) => {
+                    const num = Number(e.currentTarget.value);
+                    if (!isNaN(num)) {
+                      e.currentTarget.value = num.toFixed(2);
+                      form.setValue('price', num, { shouldValidate: true });
+                    }
+                  }}
                 />
                 {form.formState.errors.price && (
                   <p className="text-sm text-destructive">{form.formState.errors.price.message}</p>
@@ -360,6 +577,141 @@ const Edit = () => {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Scrap Dialog */}
+      <Dialog open={isScrapDialogOpen} onOpenChange={setIsScrapDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Списание товара</DialogTitle>
+            <DialogDescription>
+              Укажите количество и склад для списания товара "{scrapItem?.name}"
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="scrap-quantity">Количество для списания *</Label>
+              <Input
+                id="scrap-quantity"
+                type="number"
+                min="1"
+                max={scrapItem?.quantity || 0}
+                value={scrapQuantity}
+                onChange={(e) => setScrapQuantity(e.target.value)}
+                placeholder="Введите количество"
+              />
+              <p className="text-sm text-muted-foreground">
+                Доступно: {scrapItem?.quantity || 0} шт.
+              </p>
+            </div>
+
+            {scrapQuantity !== scrapItem?.quantity?.toString() && (
+              <div className="space-y-2">
+                <Label htmlFor="scrap-location">Склад *</Label>
+                <Select value={scrapLocation} onValueChange={setScrapLocation}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Выберите склад" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableGroups.map((group) => (
+                      <SelectItem key={group.id} value={group.location}>
+                        {group.location} ({group.quantity} шт.)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="scrap-reason">Причина списания</Label>
+              <Input
+                id="scrap-reason"
+                value={scrapReason}
+                onChange={(e) => setScrapReason(e.target.value)}
+                placeholder="Например: Брак, истечение срока годности"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+              <input
+                type="checkbox"
+                id="scrap-all"
+                checked={scrapQuantity === scrapItem?.quantity?.toString()}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setScrapQuantity(scrapItem?.quantity?.toString() || "");
+                    setScrapLocation(""); // Очищаем выбор склада при списании всего
+                  } else {
+                    setScrapQuantity("");
+                    setScrapLocation("");
+                  }
+                }}
+              />
+              <Label htmlFor="scrap-all" className="text-sm">
+                Списать все количество товара со всех складов
+              </Label>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIsScrapDialogOpen(false)}
+            >
+              Отмена
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleScrapSubmit}
+              disabled={!scrapQuantity || (scrapQuantity !== scrapItem?.quantity?.toString() && !scrapLocation)}
+            >
+              Списать товар
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <CategoriesModal
+        open={categoriesModalOpen}
+        onOpenChange={setCategoriesModalOpen}
+        currentCategoryName={form.watch("category") || ""}
+        onSelect={(name) => { form.setValue("category", name); setCategoriesModalOpen(false); }}
+        onDeleted={refreshItems}
+      />
+      <TagsModal
+        open={tagsModalOpen}
+        onOpenChange={setTagsModalOpen}
+        componentId={editingItem?.id ?? null}
+        onSaved={refreshItems}
+      />
+      <Dialog open={tagsManagerModalOpen} onOpenChange={setTagsManagerModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Управление тегами</DialogTitle>
+            <DialogDescription>
+              Создание, редактирование и удаление тегов для классификации товаров
+            </DialogDescription>
+          </DialogHeader>
+          <TagsManager />
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!itemToArchive} onOpenChange={(open) => !open && setItemToArchive(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Убрать «{itemToArchive?.name}» в архив?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Изделие пропадёт из списков и статистики, но перемещения, поставки, списания
+              и документы останутся. Восстановить можно в настройках, в разделе «Архив».
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction onClick={handleArchiveConfirm}>В архив</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

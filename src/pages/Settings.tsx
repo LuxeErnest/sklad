@@ -14,6 +14,7 @@ import { StatusCard } from "@/components/database/StatusCard";
 import { ConnectionPoolCard } from "@/components/database/ConnectionPoolCard";
 import { CacheCard } from "@/components/database/CacheCard";
 import { BackupCard } from "@/components/database/BackupCard";
+import { ArchiveCard } from "@/components/database/ArchiveCard";
 
 const SettingsPage = () => {
   const [search, setSearch] = useState("");
@@ -234,6 +235,9 @@ const SettingsPage = () => {
 
                   {/* 4. Резервные копии */}
                   <BackupCard />
+
+                  {/* 5. Архив изделий */}
+                  <ArchiveCard />
 
                   {/* 7. Изменить местоположение БД */}
                   <Card className="border-dashed">

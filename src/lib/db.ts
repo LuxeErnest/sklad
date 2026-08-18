@@ -191,6 +191,7 @@ export async function initDb() {
         { col: 'barcode', sql: 'ALTER TABLE components ADD COLUMN barcode TEXT' },
         { col: 'description', sql: 'ALTER TABLE components ADD COLUMN description TEXT' },
         { col: 'url', sql: 'ALTER TABLE components ADD COLUMN url TEXT' },
+        { col: 'archivedAt', sql: 'ALTER TABLE components ADD COLUMN archivedAt TEXT' },
       ]) {
         if (!cols.includes(col)) {
           await db.execute(sql);
@@ -387,7 +388,7 @@ export async function getComponents() {
   let db: Database | undefined;
   try {
     db = await getDb();
-    const result = await db.select<any[]>("SELECT * FROM components ORDER BY name ASC");
+    const result = await db.select<any[]>("SELECT * FROM components WHERE archivedAt IS NULL ORDER BY name ASC");
     console.log(`✅ Loaded ${result.length} components`);
     dbCache.set(cacheKey, result, 2 * 60 * 1000);
     return result;
@@ -539,24 +540,105 @@ async function _upsertComponentInternal(c: {
   }
 }
 
-export async function deleteComponent(id: number) {
-  if (!isTauriRuntime()) {
-    const list = readComponentsFromLocalStorage();
-    writeComponentsToLocalStorage(list.filter((r) => r.id !== id));
-    try { window.dispatchEvent(new CustomEvent('componentsUpdated')); } catch {}
-    return;
-  }
-  let db: Database | undefined;
-  try {
-    db = await getDb();
-    await db.execute("DELETE FROM configuration_components WHERE componentId=?", [id]);
-    await db.execute("DELETE FROM components WHERE id=?", [id]);
-    dbCache.invalidateComponent(id);
-    dbCache.invalidate('components_list');
-    try { window.dispatchEvent(new CustomEvent('componentsUpdated')); } catch {}
-  } finally {
-    if (db) releaseDb(db);
-  }
+/**
+ * Убирает товар из оборота, сохраняя всю историю.
+ *
+ * Физическое удаление для товара с историей невозможно: внешние ключи включены
+ * (sqlx выставляет foreign_keys = ON), а перемещения, поставки, списания и
+ * документы ссылаются на товар без ON DELETE. Прежняя deleteComponent чистила
+ * только configuration_components и падала на любом товаре, у которого есть
+ * хоть один этап — то есть на любом, заведённом обычным путём.
+ */
+export async function archiveComponent(id: number) {
+  const archivedAt = new Date().toISOString();
+  await withDb((db) =>
+    db.execute("UPDATE components SET archivedAt = ? WHERE id = ?", [archivedAt, id])
+  );
+  dbCache.invalidateComponent(id);
+  dbCache.invalidate('components_list');
+  try { window.dispatchEvent(new CustomEvent('componentsUpdated')); } catch {}
+}
+
+export async function restoreComponent(id: number) {
+  await withDb((db) => db.execute("UPDATE components SET archivedAt = NULL WHERE id = ?", [id]));
+  dbCache.invalidateComponent(id);
+  dbCache.invalidate('components_list');
+  try { window.dispatchEvent(new CustomEvent('componentsUpdated')); } catch {}
+}
+
+export async function getArchivedComponents() {
+  return await withDb((db) =>
+    db.select<any[]>("SELECT * FROM components WHERE archivedAt IS NOT NULL ORDER BY archivedAt DESC")
+  );
+}
+
+/** Сколько записей истории потеряется при безвозвратном удалении товара. */
+export async function getComponentReferenceCounts(id: number): Promise<Record<string, number>> {
+  const tables = [
+    'component_groups', 'component_paths', 'scrapped_items', 'supply_records',
+    'component_usage_history', 'purchase_recommendations', 'configuration_components',
+    'documents', 'component_tags', 'document_components',
+  ];
+  return await withDb(async (db) => {
+    const counts: Record<string, number> = {};
+    for (const table of tables) {
+      const rows = await db.select<{ n: number }[]>(
+        `SELECT COUNT(*) as n FROM ${table} WHERE componentId = ?`, [id]
+      );
+      const n = rows?.[0]?.n ?? 0;
+      if (n > 0) counts[table] = n;
+    }
+    return counts;
+  });
+}
+
+/**
+ * Безвозвратно удаляет товар вместе со всей историей.
+ *
+ * Порядок обязателен: дочерние строки удаляются раньше родительской, иначе
+ * внешние ключи не дадут удалить товар.
+ */
+export async function deleteComponentPermanently(id: number) {
+  await withDb(async (db) => {
+    // documents.componentId объявлен NOT NULL со ссылкой на товар, поэтому
+    // документ нельзя просто отвязать. Если документ привязан ещё к кому-то
+    // через document_components — переносим на него, иначе удаляем документ.
+    const owned = await db.select<{ id: number }[]>(
+      "SELECT id FROM documents WHERE componentId = ?", [id]
+    );
+    for (const doc of owned || []) {
+      const other = await db.select<{ componentId: number }[]>(
+        "SELECT componentId FROM document_components WHERE documentId = ? AND componentId != ? LIMIT 1",
+        [doc.id, id]
+      );
+      const heir = other?.[0]?.componentId;
+      if (heir) {
+        await db.execute("UPDATE documents SET componentId = ? WHERE id = ?", [heir, doc.id]);
+      } else {
+        await db.execute("DELETE FROM document_components WHERE documentId = ?", [doc.id]);
+        await db.execute("DELETE FROM documents WHERE id = ?", [doc.id]);
+      }
+    }
+
+    for (const sql of [
+      "DELETE FROM component_tags WHERE componentId = ?",
+      "DELETE FROM document_components WHERE componentId = ?",
+      "DELETE FROM configuration_components WHERE componentId = ?",
+      "DELETE FROM component_usage_history WHERE componentId = ?",
+      "DELETE FROM scrapped_items WHERE componentId = ?",
+      "DELETE FROM purchase_recommendations WHERE componentId = ?",
+      "DELETE FROM supply_records WHERE componentId = ?",
+      "DELETE FROM component_paths WHERE componentId = ?",
+      "DELETE FROM component_groups WHERE componentId = ?",
+      "DELETE FROM components WHERE id = ?",
+    ]) {
+      await db.execute(sql, [id]);
+    }
+  });
+  dbCache.invalidateComponent(id);
+  dbCache.invalidate('components_list');
+  dbCache.invalidate('documents_list');
+  try { window.dispatchEvent(new CustomEvent('componentsUpdated')); } catch {}
 }
 
 // Configurations persistence
@@ -1973,6 +2055,7 @@ export async function getWarehouseStatistics() {
           SUM(CASE WHEN quantity <= minStock THEN 1 ELSE 0 END) as lowStock,
           SUM(CASE WHEN quantity = 0 THEN 1 ELSE 0 END) as outOfStock
         FROM components
+        WHERE archivedAt IS NULL
       `),
       db.select<{count: number}[]>("SELECT COUNT(*) as count FROM configurations"),
       db.select<{count: number}[]>("SELECT COUNT(*) as count FROM configuration_builds"),
