@@ -244,62 +244,17 @@ const SettingsPage = () => {
                   <IntegrityCard />
 
                   {/* 7. Изменить местоположение БД */}
-                  <Card className="border-dashed">
-                    <CardHeader className="p-4 pb-2">
-                      <CardTitle className="text-base">Изменить местоположение БД</CardTitle>
-                      <CardDescription>Переместить SQLite файл</CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-4 pt-0 space-y-2">
-                      <Button size="sm" className="w-full" onClick={async ()=>{
-                        const path = prompt('Укажите новую папку для базы (полный путь)');
-                        if (path && typeof path === 'string') {
-                          const { dbConfig } = await import('@/lib/db-config');
-                          dbConfig.updateConfig({ path: `${path}/app.db`, type: 'sqlite' });
-                          alert('Местоположение базы обновлено. Перезапустите приложение.');
-                        }
-                      }}>Выбрать папку</Button>
-                    </CardContent>
-                  </Card>
-
-                  {/* 8. Внешняя база (сервер) */}
-                  <Card className="border-dashed">
-                    <CardHeader className="p-4 pb-2">
-                      <CardTitle className="text-base">Внешняя база (сервер)</CardTitle>
-                      <CardDescription>Указать адрес подключения</CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-4 pt-0 space-y-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="ext-db" className="text-xs">Строка подключения</Label>
-                        <Input 
-                          id="ext-db" 
-                          placeholder="postgres://user:pass@host:5432/dbname" 
-                          className="h-8 text-xs"
-                          onBlur={async (e)=>{
-                            const { dbConfig } = await import('@/lib/db-config');
-                            dbConfig.updateConfig({ type: 'external', connectionString: e.target.value });
-                            alert('Внешняя база сохранена (не активируется автоматически).');
-                          }} 
-                        />
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  {/* 9. Дополнить базу */}
-                  <Card className="border-dashed">
-                    <CardHeader className="p-4 pb-2">
-                      <CardTitle className="text-base">Дополнить базу</CardTitle>
-                      <CardDescription>Импортировать в текущую</CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-4 pt-0 space-y-2">
-                      <Button size="sm" className="w-full" variant="outline" onClick={async ()=>{
-                        const file = prompt('Укажите путь к SQLite файлу для объединения (.db/.sqlite)');
-                        if (!file || typeof file !== 'string') return;
-                        const { invoke } = await import('@tauri-apps/api/core');
-                        await invoke('merge_sqlite_into_current', { sourcePath: file });
-                        alert('Данные добавлены.');
-                      }}>Прикрепить файл SQLite</Button>
-                    </CardContent>
-                  </Card>
+                  {/*
+                    Убраны три неработавшие карточки:
+                    — «Изменить местоположение БД»: писала путь в localStorage, но
+                      db-pool.ts открывает захардкоженный 'app.db' и настройку не читает;
+                    — «Внешняя база (сервер)»: сохраняла строку подключения, которую
+                      никто не использует, а getDatabasePath() для type='external'
+                      бросает 'External database not implemented yet';
+                    — «Дополнить базу»: вызывала команду merge_sqlite_into_current,
+                      которой в Rust не существует, то есть падала всегда.
+                    Вернуть их имеет смысл вместе с реальной реализацией в Фазе 2.
+                  */}
                 </div>
               </CardContent>
             </Card>
