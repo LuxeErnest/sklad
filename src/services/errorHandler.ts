@@ -45,46 +45,22 @@ export class InventoryError extends Error {
 }
 
 /**
- * Обрабатывает ошибки базы данных
+ * Обрабатывает ошибки базы данных.
+ *
+ * Разбора английских сообщений SQLite здесь больше нет. Раньше эта функция
+ * искала в тексте `database is locked`, `no such table` и `UNIQUE constraint`,
+ * чтобы подменить их на понятные. Теперь текст приходит уже готовым: слой
+ * данных на Rust переводит типовые отказы сам (`friendly_message` в
+ * `src-tauri/src/db/mod.rs`), причём точнее — например, при нехватке товара
+ * называет изделие, склад, остаток и требуемое количество.
+ *
+ * Подменять такое сообщение общей фразой значило бы потерять подробности.
  */
 export function handleDatabaseError(error: unknown): AppError {
-  if (error instanceof Error) {
-    // Проверяем на специфичные ошибки SQLite
-    if (error.message.includes('database is locked')) {
-      return {
-        code: 'DB_LOCKED',
-        message: 'База данных заблокирована. Попробуйте позже.',
-        details: error
-      };
-    }
-    
-    if (error.message.includes('no such table')) {
-      return {
-        code: 'DB_TABLE_MISSING',
-        message: 'Таблица не найдена. Возможно, требуется инициализация базы данных.',
-        details: error
-      };
-    }
-    
-    if (error.message.includes('UNIQUE constraint')) {
-      return {
-        code: 'DB_UNIQUE_CONSTRAINT',
-        message: 'Нарушение уникальности данных.',
-        details: error
-      };
-    }
-    
-    return {
-      code: 'DB_ERROR',
-      message: error.message || 'Ошибка базы данных',
-      details: error
-    };
-  }
-  
   const message = getErrorMessage(error);
   return {
-    code: 'UNKNOWN_ERROR',
-    message: message || 'Неизвестная ошибка',
+    code: error instanceof Error ? 'DB_ERROR' : 'UNKNOWN_ERROR',
+    message: message || 'Ошибка базы данных',
     details: error
   };
 }

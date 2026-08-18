@@ -11,8 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { Settings, Database, Bell, Shield, Palette, Save } from "lucide-react";
 import { useState } from "react";
 import { StatusCard } from "@/components/database/StatusCard";
-import { ConnectionPoolCard } from "@/components/database/ConnectionPoolCard";
-import { CacheCard } from "@/components/database/CacheCard";
+import { StorageCard } from "@/components/database/StorageCard";
 import { BackupCard } from "@/components/database/BackupCard";
 import { ArchiveCard } from "@/components/database/ArchiveCard";
 import { IntegrityCard } from "@/components/database/IntegrityCard";
@@ -229,11 +228,8 @@ const SettingsPage = () => {
                   {/* 1. Статус */}
                   <StatusCard />
 
-                  {/* 2. Пул соединений */}
-                  <ConnectionPoolCard />
-
-                  {/* 3. Кэш */}
-                  <CacheCard />
+                  {/* 2. Хранилище */}
+                  <StorageCard />
 
                   {/* 4. Резервные копии */}
                   <BackupCard />

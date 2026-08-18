@@ -7,7 +7,7 @@ import { HashRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { AppProvider } from "@/contexts/AppContext";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
-import { setupGlobalErrorHandlers } from "@/utils/errorHandler";
+import { setupGlobalErrorHandlers } from "@/utils/globalErrorHandlers";
 import { useEffect } from "react";
 // import { useGlassmorphism } from "@/hooks/useGlassmorphism";
 import Index from "./pages/Index";

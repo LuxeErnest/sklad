@@ -189,11 +189,6 @@ async function defaultLocationId(): Promise<number> {
 }
 
 
-/** Инициализация выполняется в Rust при запуске: схема и миграции — там. */
-export async function initDb() {
-  /* ничего не требуется */
-}
-
 export async function getComponents() {
   const items = await invoke<ItemView[]>("list_items");
   return items.map(toLegacyItem);
@@ -341,11 +336,6 @@ export async function getComponentGroups(componentId: number) {
   }));
 }
 
-/** Дубли мест хранения теперь невозможны: ключ таблицы — изделие плюс место. */
-export async function cleanupDuplicateGroups(_componentId: number) {
-  return 0;
-}
-
 // ---------- Журнал ----------
 
 function toLegacyPath(line: OperationLineView, index: number) {
@@ -407,11 +397,6 @@ export async function getComponentUsageHistory(componentId?: number) {
     notes: l.note,
     createdAt: l.performedAt,
   }));
-}
-
-/** История ведётся самим журналом операций, отдельная запись не нужна. */
-export async function addComponentUsageHistory(_payload: unknown) {
-  return 0;
 }
 
 /**
@@ -993,20 +978,12 @@ export async function getDatabaseHealth() {
     return {
       status: "healthy" as const,
       message: `База в порядке: позиций ${stats.totalItems}, операций ${stats.operationsTotal}`,
-      poolStats: null,
-      cacheStats: { size: 0, keys: [] as string[] },
-      batchStats: {},
-      queueStats: getQueueStats(),
       timestamp: new Date().toISOString(),
     };
   } catch (error) {
     return {
       status: "error" as const,
       message: `Ошибка базы данных: ${error}`,
-      poolStats: null,
-      cacheStats: { size: 0, keys: [] as string[] },
-      batchStats: {},
-      queueStats: getQueueStats(),
       timestamp: new Date().toISOString(),
     };
   }
@@ -1016,31 +993,20 @@ export async function getDatabasePath(): Promise<string> {
   return await invoke("get_db_path");
 }
 
+/** Сведения о хранилище: где лежит база, сколько занимает и чем заполнена. */
+export async function getDatabaseInfo() {
+  return await invoke<{
+    path: string;
+    sizeBytes: number;
+    walBytes: number;
+    documentsBytes: number;
+    backupsCount: number;
+  }>("database_info");
+}
+
 // Кэша, очереди и пула больше нет: запросы идут напрямую к локальной базе
-// через Rust. Заглушки оставлены, чтобы не переписывать разметку настроек.
-export function clearAllCache() {
-  /* кэша нет */
-}
-
-export function getCacheStats() {
-  return { size: 0, keys: [] as string[] };
-}
-
-export function getQueueStats() {
-  return { queueLength: 0, currentOperations: 0, maxConcurrent: 1, processing: false };
-}
-
-export async function waitForQueueCompletion() {
-  /* очереди нет: операции выполняются последовательно в Rust */
-}
-
-export async function emergencyReset() {
-  return true;
-}
-
-export const refreshComponents = getComponents;
-export const refreshConfigurations = getConfigurations;
-export const refreshDocuments = getDocuments;
+// через Rust, а повторные обращения дедуплицирует react-query. Заглушки,
+// которые оставались ради удалённых карточек настроек, тоже убраны.
 
 // ---------- Проверка ввода ----------
 

@@ -38,6 +38,48 @@ pub fn get_db_path(db: State<'_, Db>) -> String {
     db.path().to_string_lossy().to_string()
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseInfo {
+    pub path: String,
+    pub size_bytes: u64,
+    /// Размер журнала WAL. Данные, ещё не перенесённые в основной файл,
+    /// лежат здесь, поэтому без него размер базы выглядит меньше реального.
+    pub wal_bytes: u64,
+    pub documents_bytes: u64,
+    pub backups_count: usize,
+}
+
+/// Сведения о хранилище для раздела настроек.
+#[tauri::command]
+pub fn database_info<R: Runtime>(app: AppHandle<R>, db: State<'_, Db>) -> DbResult<DatabaseInfo> {
+    let path = db.path().to_path_buf();
+    let size_of = |p: PathBuf| fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+
+    let documents_bytes = fs::read_dir(app_dir(&app)?.join("documents"))
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter_map(|e| e.metadata().ok())
+                .filter(|m| m.is_file())
+                .map(|m| m.len())
+                .sum()
+        })
+        .unwrap_or(0);
+
+    let backups_count = fs::read_dir(backups_dir(&app)?)
+        .map(|entries| entries.flatten().filter(|e| e.path().is_file()).count())
+        .unwrap_or(0);
+
+    Ok(DatabaseInfo {
+        size_bytes: size_of(path.clone()),
+        wal_bytes: size_of(PathBuf::from(format!("{}-wal", path.to_string_lossy()))),
+        documents_bytes,
+        backups_count,
+        path: path.to_string_lossy().to_string(),
+    })
+}
+
 fn timestamped_backup_path<R: Runtime>(app: &AppHandle<R>) -> DbResult<PathBuf> {
     let name = format!("sklad_backup_{}.db", Utc::now().format("%Y%m%d_%H%M%S"));
     let path = backups_dir(app)?.join(name);

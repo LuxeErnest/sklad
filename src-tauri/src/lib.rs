@@ -16,6 +16,7 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       // Обслуживание базы
       database::get_db_path,
+      database::database_info,
       database::create_backup,
       database::prepare_backup_path,
       database::record_backup,
