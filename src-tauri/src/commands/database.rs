@@ -1,23 +1,9 @@
+use crate::db::{Db, DbError, DbResult};
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager, Runtime};
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DatabaseConfig {
-    pub version: i32,
-    pub last_backup: Option<String>,
-}
-
-impl Default for DatabaseConfig {
-    fn default() -> Self {
-        Self {
-            version: 0,
-            last_backup: None,
-        }
-    }
-}
+use tauri::{AppHandle, Manager, Runtime, State};
 
 #[derive(Debug, Serialize)]
 pub struct BackupInfo {
@@ -29,112 +15,81 @@ pub struct BackupInfo {
 
 /// Каталог данных приложения.
 ///
-/// Важно: путь берётся у самого Tauri, а не собирается вручную. Именно сюда
-/// `tauri-plugin-sql` кладёт `app.db` (каталог определяется идентификатором
-/// приложения из tauri.conf.json). Раньше здесь использовался
+/// Путь берётся у Tauri, а не собирается вручную: раньше здесь был
 /// `dirs::data_dir().join("sklad")` — каталог, которого не существует, из-за
-/// чего бэкап всегда падал на проверке наличия файла базы.
-fn app_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
+/// чего резервное копирование не работало ни разу.
+fn app_dir<R: Runtime>(app: &AppHandle<R>) -> DbResult<PathBuf> {
     let dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("Не удалось определить каталог данных приложения: {}", e))?;
-    fs::create_dir_all(&dir)
-        .map_err(|e| format!("Не удалось создать каталог данных приложения: {}", e))?;
+        .map_err(|e| DbError(format!("Не удалось определить каталог данных: {}", e)))?;
+    fs::create_dir_all(&dir)?;
     Ok(dir)
 }
 
-fn db_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    Ok(app_dir(app)?.join("app.db"))
-}
-
-fn config_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    Ok(app_dir(app)?.join("db_config.json"))
-}
-
-fn backups_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
+fn backups_dir<R: Runtime>(app: &AppHandle<R>) -> DbResult<PathBuf> {
     let dir = app_dir(app)?.join("backups");
-    fs::create_dir_all(&dir).map_err(|e| format!("Не удалось создать каталог бэкапов: {}", e))?;
+    fs::create_dir_all(&dir)?;
     Ok(dir)
 }
 
-fn load_config<R: Runtime>(app: &AppHandle<R>) -> Result<DatabaseConfig, String> {
-    let path = config_path(app)?;
-    if !path.exists() {
-        return Ok(DatabaseConfig::default());
-    }
-    let content = fs::read_to_string(&path)
-        .map_err(|e| format!("Не удалось прочитать конфигурацию БД: {}", e))?;
-    serde_json::from_str(&content)
-        .map_err(|e| format!("Не удалось разобрать конфигурацию БД: {}", e))
-}
-
-fn save_config<R: Runtime>(app: &AppHandle<R>, config: &DatabaseConfig) -> Result<(), String> {
-    let content = serde_json::to_string_pretty(config)
-        .map_err(|e| format!("Не удалось сериализовать конфигурацию БД: {}", e))?;
-    fs::write(config_path(app)?, content)
-        .map_err(|e| format!("Не удалось записать конфигурацию БД: {}", e))
-}
-
 #[tauri::command]
-pub async fn get_db_version<R: Runtime>(app: AppHandle<R>) -> Result<i32, String> {
-    Ok(load_config(&app)?.version)
+pub fn get_db_path(db: State<'_, Db>) -> String {
+    db.path().to_string_lossy().to_string()
 }
 
-#[tauri::command]
-pub async fn set_db_version<R: Runtime>(version: i32, app: AppHandle<R>) -> Result<(), String> {
-    let mut config = load_config(&app).unwrap_or_default();
-    config.version = version;
-    save_config(&app, &config)
-}
-
-/// Готовит место под резервную копию и возвращает путь к будущему файлу.
-///
-/// Сам снимок делает фронтенд запросом `VACUUM INTO`. Копировать файл базы
-/// средствами файловой системы нельзя: в режиме WAL часть данных лежит в
-/// `app.db-wal`, и копия одного `app.db` окажется неполной. `VACUUM INTO`
-/// создаёт согласованный снимок штатными средствами SQLite.
-#[tauri::command]
-pub async fn prepare_backup_path<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
-    let db = db_path(&app)?;
-    if !db.exists() {
-        return Err(format!("Файл базы данных не найден: {}", db.display()));
-    }
+fn timestamped_backup_path<R: Runtime>(app: &AppHandle<R>) -> DbResult<PathBuf> {
     let name = format!("sklad_backup_{}.db", Utc::now().format("%Y%m%d_%H%M%S"));
-    let path = backups_dir(&app)?.join(name);
+    let path = backups_dir(app)?.join(name);
     if path.exists() {
-        // VACUUM INTO отказывается писать в существующий файл.
-        return Err("Резервная копия с такой меткой времени уже существует".to_string());
+        return Err(DbError(
+            "Резервная копия с такой меткой времени уже существует".to_string(),
+        ));
     }
-    Ok(path.to_string_lossy().to_string())
+    Ok(path)
 }
 
-/// Отмечает успешно созданную копию в конфигурации.
+/// Оставлено для совместимости с интерфейсом: возвращает путь будущей копии.
 #[tauri::command]
-pub async fn record_backup<R: Runtime>(path: String, app: AppHandle<R>) -> Result<(), String> {
+pub fn prepare_backup_path<R: Runtime>(app: AppHandle<R>) -> DbResult<String> {
+    Ok(timestamped_backup_path(&app)?.to_string_lossy().to_string())
+}
+
+/// Создаёт резервную копию через `VACUUM INTO`.
+///
+/// Копировать файл базы средствами файловой системы нельзя: в режиме WAL часть
+/// данных находится в `warehouse.db-wal`, и копия одного файла окажется
+/// неполной. `VACUUM INTO` делает согласованный снимок силами самой SQLite.
+#[tauri::command]
+pub fn create_backup<R: Runtime>(app: AppHandle<R>, db: State<'_, Db>) -> DbResult<String> {
+    let target = timestamped_backup_path(&app)?;
+    let target_str = target.to_string_lossy().to_string();
+    db.with(|conn| {
+        conn.execute("VACUUM INTO ?1", [&target_str])?;
+        Ok(())
+    })?;
+    Ok(target_str)
+}
+
+/// Оставлено для совместимости: сам факт создания копии фиксируется её файлом.
+#[tauri::command]
+pub fn record_backup(path: String) -> DbResult<()> {
     if !PathBuf::from(&path).exists() {
-        return Err(format!("Резервная копия не создана: {}", path));
+        return Err(DbError(format!("Резервная копия не создана: {}", path)));
     }
-    let mut config = load_config(&app).unwrap_or_default();
-    config.last_backup = Some(path);
-    save_config(&app, &config)
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn list_backups<R: Runtime>(app: AppHandle<R>) -> Result<Vec<BackupInfo>, String> {
+pub fn list_backups<R: Runtime>(app: AppHandle<R>) -> DbResult<Vec<BackupInfo>> {
     let dir = backups_dir(&app)?;
     let mut out = Vec::new();
-    let entries =
-        fs::read_dir(&dir).map_err(|e| format!("Не удалось прочитать каталог бэкапов: {}", e))?;
-    for entry in entries.flatten() {
+    for entry in fs::read_dir(&dir)?.flatten() {
         let path = entry.path();
         if !path.is_file() {
             continue;
         }
-        let meta = match entry.metadata() {
-            Ok(m) => m,
-            Err(_) => continue,
-        };
+        let Ok(meta) = entry.metadata() else { continue };
         let created_at = meta
             .modified()
             .ok()
@@ -153,52 +108,50 @@ pub async fn list_backups<R: Runtime>(app: AppHandle<R>) -> Result<Vec<BackupInf
 
 /// Восстанавливает базу из резервной копии.
 ///
-/// Соединение должно быть закрыто вызывающей стороной до вызова. Побочные файлы
-/// WAL удаляются: иначе SQLite при следующем открытии накатит журнал поверх
-/// восстановленного файла и вернёт данные, от которых мы уходим.
+/// Побочные файлы WAL удаляются: иначе SQLite при следующем открытии накатит
+/// журнал поверх восстановленного файла и вернёт данные, от которых мы уходим.
+/// Соединение при этом остаётся открытым, поэтому после восстановления
+/// обязателен перезапуск — его выполняет вызывающая сторона.
 #[tauri::command]
-pub async fn restore_db_backup<R: Runtime>(
+pub fn restore_db_backup<R: Runtime>(
     backup_path: String,
     app: AppHandle<R>,
-) -> Result<(), String> {
+    db: State<'_, Db>,
+) -> DbResult<()> {
     let source = PathBuf::from(&backup_path);
     if !source.exists() {
-        return Err(format!("Файл резервной копии не найден: {}", backup_path));
+        return Err(DbError(format!(
+            "Файл резервной копии не найден: {}",
+            backup_path
+        )));
     }
 
-    let db = db_path(&app)?;
+    let target = db.path().to_path_buf();
 
-    // Перед перезаписью сохраняем текущее состояние — если копия окажется
+    // Перед перезаписью сохраняем текущее состояние: если копия окажется
     // испорченной, будет к чему вернуться.
-    if db.exists() {
+    if target.exists() {
         let safety = backups_dir(&app)?.join(format!(
             "before_restore_{}.db",
             Utc::now().format("%Y%m%d_%H%M%S")
         ));
-        fs::copy(&db, &safety)
-            .map_err(|e| format!("Не удалось сохранить текущую базу перед восстановлением: {}", e))?;
+        db.with(|conn| {
+            conn.execute("VACUUM INTO ?1", [&safety.to_string_lossy().to_string()])?;
+            Ok(())
+        })?;
     }
 
-    fs::copy(&source, &db).map_err(|e| format!("Не удалось восстановить базу: {}", e))?;
-
+    fs::copy(&source, &target)?;
     for suffix in ["-wal", "-shm"] {
-        let side = PathBuf::from(format!("{}{}", db.to_string_lossy(), suffix));
+        let side = PathBuf::from(format!("{}{}", target.to_string_lossy(), suffix));
         if side.exists() {
             let _ = fs::remove_file(side);
         }
     }
-
     Ok(())
 }
 
-/// Перезапускает приложение — используется после восстановления базы.
 #[tauri::command]
-pub async fn restart_app<R: Runtime>(app: AppHandle<R>) {
+pub fn restart_app<R: Runtime>(app: AppHandle<R>) {
     app.restart();
-}
-
-/// Путь к файлу базы — для отображения в настройках.
-#[tauri::command]
-pub async fn get_db_path<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
-    Ok(db_path(&app)?.to_string_lossy().to_string())
 }

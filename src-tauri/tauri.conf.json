@@ -26,13 +26,6 @@
       "csp": null
     }
   },
-  "plugins": {
-    "sql": {
-      "preload": [
-        "sqlite:app.db"
-      ]
-    }
-  },
   "bundle": {
     "active": true,
     "targets": "all",
