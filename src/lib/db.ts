@@ -1982,6 +1982,139 @@ export async function refreshDocuments() {
 }
 
 // Database health check
+// --- Проверка целостности ---
+
+export interface QuantityMismatch {
+  id: number;
+  name: string;
+  /** Значение в components.quantity */
+  total: number;
+  /** Сумма по component_groups */
+  byLocation: number;
+}
+
+export interface MissingLocation {
+  id: number;
+  name: string;
+  quantity: number;
+  location: string;
+}
+
+export interface IntegrityReport {
+  /** Остаток не совпадает с суммой по местам хранения */
+  quantityMismatches: QuantityMismatch[];
+  /** Ненулевой остаток без единого места хранения */
+  missingLocations: MissingLocation[];
+  /** Товары, у которых есть группы-дубли по паре «место, цена» */
+  duplicateGroupComponents: number[];
+  /** Нарушения внешних ключей (штатная проверка SQLite) */
+  foreignKeyViolations: number;
+  checkedAt: string;
+}
+
+/**
+ * Ищет расхождения в учёте.
+ *
+ * Источником правды считается распределение по местам хранения: операции идут
+ * над местами, а общий остаток товара их суммирует. Поэтому расхождение — это
+ * повод исправить components.quantity, а не наоборот.
+ */
+export async function checkIntegrity(): Promise<IntegrityReport> {
+  return await withDb(async (db) => {
+    const mismatches = await db.select<QuantityMismatch[]>(`
+      SELECT c.id, c.name, c.quantity AS total,
+             COALESCE(SUM(g.quantity), 0) AS byLocation
+      FROM components c
+      JOIN component_groups g ON g.componentId = c.id
+      GROUP BY c.id, c.name, c.quantity
+      HAVING c.quantity != COALESCE(SUM(g.quantity), 0)
+      ORDER BY c.name
+    `);
+
+    const missing = await db.select<MissingLocation[]>(`
+      SELECT c.id, c.name, c.quantity, COALESCE(c.location, '') AS location
+      FROM components c
+      WHERE c.quantity > 0
+        AND c.archivedAt IS NULL
+        AND NOT EXISTS (SELECT 1 FROM component_groups g WHERE g.componentId = c.id)
+      ORDER BY c.name
+    `);
+
+    const duplicates = await db.select<{ componentId: number }[]>(`
+      SELECT componentId FROM component_groups
+      GROUP BY componentId, location, price
+      HAVING COUNT(*) > 1
+    `);
+
+    const fkRows = await db.select<any[]>("PRAGMA foreign_key_check");
+
+    return {
+      quantityMismatches: mismatches || [],
+      missingLocations: missing || [],
+      duplicateGroupComponents: [...new Set((duplicates || []).map((d) => d.componentId))],
+      foreignKeyViolations: (fkRows || []).length,
+      checkedAt: new Date().toISOString(),
+    };
+  });
+}
+
+/**
+ * Устраняет найденные расхождения, ничего не теряя.
+ *
+ * Расхождение остатка выравнивается по сумме мест хранения. Товар с остатком,
+ * но без мест хранения, не обнуляется — вместо этого ему заводится место по
+ * его полю location, чтобы данные пришли к общему виду без потерь.
+ */
+export async function repairIntegrity(): Promise<{
+  quantitiesFixed: number;
+  locationsCreated: number;
+  duplicatesMerged: number;
+}> {
+  const report = await checkIntegrity();
+
+  let quantitiesFixed = 0;
+  let locationsCreated = 0;
+  let duplicatesMerged = 0;
+
+  for (const componentId of report.duplicateGroupComponents) {
+    duplicatesMerged += (await cleanupDuplicateGroups(componentId)) ?? 0;
+  }
+
+  await withDb(async (db) => {
+    for (const item of report.missingLocations) {
+      const now = new Date().toISOString();
+      await db.execute(`
+        INSERT INTO component_groups (componentId, name, location, quantity, price, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, NULL, ?, ?)
+      `, [
+        item.id,
+        `Восстановлено при проверке — ${item.location || 'без места'}`,
+        item.location || 'Не указано',
+        item.quantity,
+        now, now,
+      ]);
+      locationsCreated += 1;
+    }
+  });
+
+  // Пересчитываем после схлопывания дублей и создания недостающих мест.
+  const afterMerge = await checkIntegrity();
+  await withDb(async (db) => {
+    for (const item of afterMerge.quantityMismatches) {
+      await db.execute(
+        "UPDATE components SET quantity = ?, lastUpdated = ? WHERE id = ?",
+        [item.byLocation, new Date().toISOString().split("T")[0], item.id]
+      );
+      quantitiesFixed += 1;
+    }
+  });
+
+  clearAllCache();
+  try { window.dispatchEvent(new CustomEvent('componentsUpdated')); } catch {}
+
+  return { quantitiesFixed, locationsCreated, duplicatesMerged };
+}
+
 export async function getDatabaseHealth() {
   try {
     if (!isTauriRuntime()) {

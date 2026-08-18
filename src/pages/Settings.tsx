@@ -15,6 +15,7 @@ import { ConnectionPoolCard } from "@/components/database/ConnectionPoolCard";
 import { CacheCard } from "@/components/database/CacheCard";
 import { BackupCard } from "@/components/database/BackupCard";
 import { ArchiveCard } from "@/components/database/ArchiveCard";
+import { IntegrityCard } from "@/components/database/IntegrityCard";
 
 const SettingsPage = () => {
   const [search, setSearch] = useState("");
@@ -238,6 +239,9 @@ const SettingsPage = () => {
 
                   {/* 5. Архив изделий */}
                   <ArchiveCard />
+
+                  {/* 6. Целостность данных */}
+                  <IntegrityCard />
 
                   {/* 7. Изменить местоположение БД */}
                   <Card className="border-dashed">
