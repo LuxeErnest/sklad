@@ -168,7 +168,10 @@ const Calculator = () => {
 
   // Calculate availability for configurations
   const calculateConfigurationAvailability = (config: any) => {
-    const availability = config.components.map(comp => {
+    // Тип результата задан явно: config приходит как any, и без этого
+    // все последующие обходы массива теряли бы типы.
+    const availability: AvailabilityItem[] = config.components.map(
+      (comp: { componentId: number; quantity: number; name: string }) => {
       const stockComponent = components.find(c => c.id === comp.componentId);
       if (!stockComponent) return { 
         ...comp, 
@@ -249,7 +252,9 @@ const Calculator = () => {
         remaining,
         warningLevel
       };
-    }).filter(Boolean);
+    // filter(Boolean) не сужает тип, поэтому предикат задаётся явно —
+    // иначе ниже пришлось бы проверять на null то, чего там уже нет.
+    }).filter((w): w is NonNullable<typeof w> => w !== null);
 
     return { totalValue, totalItems, categoryBreakdown, stockWarnings };
   }, [selectedItems, components]);

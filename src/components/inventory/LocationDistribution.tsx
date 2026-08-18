@@ -27,19 +27,24 @@ import {
   ShoppingCart,
   Trash2,
 } from "lucide-react";
-import { getComponentPaths, addComponentPath, getComponentGroups, addComponentGroup, updateComponentGroup, cleanupDuplicateGroups } from "@/lib/db";
+import { getComponentPaths, addComponentPath, getComponentGroups } from "@/lib/db";
 
+// Форма строки журнала. Поля приходят из базы, где отсутствующее значение —
+// это null, а не undefined, а вид операции задаётся строкой.
 interface PathStep {
   id: number;
   componentId: number;
   stepOrder: number;
   stepName: string;
-  stepDescription?: string;
-  stepLocation?: string;
-  stepQuantity?: number;
-  stepPrice?: number;
+  stepDescription?: string | null;
+  stepLocation?: string | null;
+  stepQuantity?: number | null;
+  stepPrice?: number | null;
   stepDate: string;
-  stepType: 'purchase' | 'transfer' | 'sale' | 'scrap' | 'processing' | 'storage';
+  stepType: string;
+  fromLocation?: string | null;
+  toLocation?: string | null;
+  kind?: string;
 }
 
 interface GroupRecord {
@@ -48,7 +53,7 @@ interface GroupRecord {
   name: string;
   location: string;
   quantity: number;
-  price?: number;
+  price?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -107,17 +112,9 @@ export const LocationDistribution = ({ componentId, componentName }: LocationDis
         return;
       }
       
-      // Add small delay to prevent concurrent database access
-      await new Promise(resolve => setTimeout(resolve, Math.random() * 100));
-      
-      // Clean up any duplicate groups first
-      try {
-        await cleanupDuplicateGroups(componentId);
-      } catch (cleanupError) {
-        console.warn('⚠️ Error during cleanup:', cleanupError);
-        // Continue even if cleanup fails
-      }
-      
+      // Случайная задержка раньше разводила одновременные обращения к базе:
+      // соединение было одно, и параллельные запросы упирались друг в друга.
+      // Доступ сериализует Rust, поэтому ждать больше незачем.
       const [pathsData, groupsData] = await Promise.all([
         getComponentPaths(componentId).catch(err => {
           console.error('❌ Error loading paths:', err);
@@ -181,39 +178,23 @@ export const LocationDistribution = ({ componentId, componentName }: LocationDis
       }
 
       try {
-        // Create transfer path
+        // Одна операция перемещения делает всё: снимает с источника и
+        // добавляет получателю в одной транзакции.
+        //
+        // Раньше здесь после создания этапа остатки правились вручную —
+        // отдельными вызовами на списание с источника и зачисление получателю.
+        // С журналом операций это привело бы к двойному движению: сначала его
+        // выполнила бы сама операция, потом ещё раз эти правки.
         await addComponentPath({
           componentId,
           stepName: newStep.stepName,
           stepDescription: newStep.stepDescription || undefined,
+          fromLocation: newStep.sourceLocation,
           stepLocation: newStep.stepLocation,
           stepQuantity: transferQuantity,
-          stepPrice: newStep.stepPrice ? parseFloat(newStep.stepPrice) : sourceGroup.price,
+          stepPrice: newStep.stepPrice ? parseFloat(newStep.stepPrice) : sourceGroup.price ?? undefined,
           stepType: 'transfer'
         });
-
-        // Update source group (reduce quantity)
-        await updateComponentGroup({
-          groupId: sourceGroup.id,
-          quantity: sourceGroup.quantity - transferQuantity
-        });
-
-        // Create or update destination group
-        const destGroup = groups.find(g => g.location === newStep.stepLocation && g.price === (newStep.stepPrice ? parseFloat(newStep.stepPrice) : sourceGroup.price));
-        if (destGroup) {
-          await updateComponentGroup({
-            groupId: destGroup.id,
-            quantity: destGroup.quantity + transferQuantity
-          });
-        } else {
-          await addComponentGroup({
-            componentId,
-            name: `Перемещение на ${newStep.stepLocation}`,
-            location: newStep.stepLocation,
-            quantity: transferQuantity,
-            price: newStep.stepPrice ? parseFloat(newStep.stepPrice) : sourceGroup.price
-          });
-        }
 
         toast({
           title: "Перемещение выполнено",

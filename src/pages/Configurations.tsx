@@ -174,7 +174,8 @@ const Configurations = () => {
   }
 
   const checkConfigurationAvailability = (config: typeof mockConfigurations[0]) => {
-    const availability: AvailabilityItem[] = config.components.map(comp => {
+    const availability: AvailabilityItem[] = config.components.map(
+      (comp: { componentId: number; quantity: number; name: string }) => {
       const stockComponent = components.find(c => c.id === comp.componentId);
       if (!stockComponent) return { ...comp, available: 0, required: comp.quantity, status: 'missing' as const, stockComponent: null } as AvailabilityItem;
       // Резервирования больше нет: доступно то, что на складе.

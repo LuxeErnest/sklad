@@ -476,7 +476,7 @@ const Documents = () => {
                                 <div className="text-sm text-muted-foreground">{doc.description}</div>
                               )}
                               <div className="flex gap-1 mt-1">
-                                {doc.tags.map(tag => (
+                                {doc.tags.map((tag: string) => (
                                   <Badge key={tag} variant="outline" className="text-xs">
                                     {tag}
                                   </Badge>
@@ -603,7 +603,7 @@ const Documents = () => {
               <div>
                 <span className="font-medium">Теги:</span>
                 <div className="flex gap-1 mt-1">
-                  {selectedDocument.tags.map(tag => (
+                  {selectedDocument.tags.map((tag: string) => (
                     <Badge key={tag} variant="outline" className="text-xs">
                       {tag}
                     </Badge>

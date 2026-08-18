@@ -13,7 +13,11 @@ export const useGlassmorphism = () => {
         const element = card as HTMLElement;
         element.style.background = 'rgba(30, 30, 30, 0.25)';
         element.style.backdropFilter = 'blur(20px)';
-        element.style.webkitBackdropFilter = 'blur(20px)';
+        // Вендорное свойство отсутствует в типах CSSStyleDeclaration,
+
+        // поэтому задаётся штатным setProperty, а не присваиванием.
+
+        element.style.setProperty('-webkit-backdrop-filter', 'blur(20px)');
         element.style.border = '1px solid rgba(255, 255, 255, 0.18)';
         element.style.borderRadius = '16px';
         element.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.37)';
@@ -25,7 +29,11 @@ export const useGlassmorphism = () => {
         const element = button as HTMLElement;
         element.style.background = 'rgba(30, 30, 30, 0.25)';
         element.style.backdropFilter = 'blur(20px)';
-        element.style.webkitBackdropFilter = 'blur(20px)';
+        // Вендорное свойство отсутствует в типах CSSStyleDeclaration,
+
+        // поэтому задаётся штатным setProperty, а не присваиванием.
+
+        element.style.setProperty('-webkit-backdrop-filter', 'blur(20px)');
         element.style.border = '1px solid rgba(255, 255, 255, 0.18)';
         element.style.borderRadius = '12px';
         element.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.37)';
@@ -38,7 +46,11 @@ export const useGlassmorphism = () => {
         const element = input as HTMLElement;
         element.style.background = 'rgba(30, 30, 30, 0.25)';
         element.style.backdropFilter = 'blur(20px)';
-        element.style.webkitBackdropFilter = 'blur(20px)';
+        // Вендорное свойство отсутствует в типах CSSStyleDeclaration,
+
+        // поэтому задаётся штатным setProperty, а не присваиванием.
+
+        element.style.setProperty('-webkit-backdrop-filter', 'blur(20px)');
         element.style.border = '1px solid rgba(255, 255, 255, 0.18)';
         element.style.borderRadius = '12px';
         element.style.color = 'rgba(255, 255, 255, 0.95)';
@@ -50,7 +62,11 @@ export const useGlassmorphism = () => {
         const element = table as HTMLElement;
         element.style.background = 'rgba(30, 30, 30, 0.25)';
         element.style.backdropFilter = 'blur(20px)';
-        element.style.webkitBackdropFilter = 'blur(20px)';
+        // Вендорное свойство отсутствует в типах CSSStyleDeclaration,
+
+        // поэтому задаётся штатным setProperty, а не присваиванием.
+
+        element.style.setProperty('-webkit-backdrop-filter', 'blur(20px)');
         element.style.border = '1px solid rgba(255, 255, 255, 0.18)';
         element.style.borderRadius = '16px';
         element.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.37)';
@@ -62,7 +78,11 @@ export const useGlassmorphism = () => {
         const element = sidebar as HTMLElement;
         element.style.background = 'rgba(30, 30, 30, 0.25)';
         element.style.backdropFilter = 'blur(25px)';
-        element.style.webkitBackdropFilter = 'blur(25px)';
+        // Вендорное свойство отсутствует в типах CSSStyleDeclaration,
+
+        // поэтому задаётся штатным setProperty, а не присваиванием.
+
+        element.style.setProperty('-webkit-backdrop-filter', 'blur(25px)');
         element.style.borderRight = '1px solid rgba(255, 255, 255, 0.18)';
         element.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.37)';
       }
@@ -73,7 +93,11 @@ export const useGlassmorphism = () => {
         const element = header as HTMLElement;
         element.style.background = 'rgba(30, 30, 30, 0.25)';
         element.style.backdropFilter = 'blur(25px)';
-        element.style.webkitBackdropFilter = 'blur(25px)';
+        // Вендорное свойство отсутствует в типах CSSStyleDeclaration,
+
+        // поэтому задаётся штатным setProperty, а не присваиванием.
+
+        element.style.setProperty('-webkit-backdrop-filter', 'blur(25px)');
         element.style.borderBottom = '1px solid rgba(255, 255, 255, 0.18)';
         element.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.37)';
       }
