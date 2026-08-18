@@ -1,12 +1,24 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { CategoryNode } from "@/lib/db";
 
 interface FilterBarProps {
-  categories: string[];
+  categoryTree: CategoryNode[];
   category: string | null;
   onCategory: (v: string | null) => void;
 }
 
-export const FilterBar = ({ categories, category, onCategory }: FilterBarProps) => {
+function flattenCategories(nodes: CategoryNode[], prefix = ""): { value: string; label: string }[] {
+  const out: { value: string; label: string }[] = [];
+  nodes.forEach((n) => {
+    out.push({ value: n.name, label: prefix ? `${prefix} / ${n.name}` : n.name });
+    if (n.children.length) out.push(...flattenCategories(n.children, prefix ? `${prefix} / ${n.name}` : n.name));
+  });
+  return out;
+}
+
+export const FilterBar = ({ categoryTree, category, onCategory }: FilterBarProps) => {
+  const flat = flattenCategories(categoryTree);
+
   return (
     <div className="flex flex-wrap items-center gap-3 py-3">
       <div className="min-w-[220px]">
@@ -16,8 +28,8 @@ export const FilterBar = ({ categories, category, onCategory }: FilterBarProps) 
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Все категории</SelectItem>
-            {categories.map((c) => (
-              <SelectItem key={c} value={c}>{c}</SelectItem>
+            {flat.map((c) => (
+              <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
             ))}
           </SelectContent>
         </Select>

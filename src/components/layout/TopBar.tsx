@@ -1,30 +1,58 @@
-import { Input } from "@/components/ui/input";
+import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { Search } from "lucide-react";
+import ThemeToggle from "@/components/theme/ThemeToggle";
+import GlassmorphismWrapper from "@/components/theme/GlassmorphismWrapper";
+import { SearchWithTagAutocomplete } from "@/components/search/SearchWithTagAutocomplete";
+import { ScanLine } from "lucide-react";
 
 interface TopBarProps {
   search: string;
   onSearch: (v: string) => void;
   summary?: { name: string; quantity: number; location: string; category: string } | null;
+  onBarcodeScan?: () => void;
+  tags?: { id: number; name: string }[];
 }
 
-export const TopBar = ({ search, onSearch, summary }: TopBarProps) => {
-  return (
+export const TopBar = ({ search, onSearch, summary, onBarcodeScan, tags = [] }: TopBarProps) => {
+  const [isGlassmorphism, setIsGlassmorphism] = useState(false);
+
+  useEffect(() => {
+    const checkTheme = () => {
+      const isGlass = document.documentElement.classList.contains('glassmorphism-theme');
+      setIsGlassmorphism(isGlass);
+    };
+
+    checkTheme();
+    
+    // Слушаем изменения темы
+    const observer = new MutationObserver(checkTheme);
+    observer.observe(document.documentElement, { 
+      attributes: true, 
+      attributeFilter: ['class'] 
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
+  const topBarContent = (
     <header className="w-full sticky top-0 z-10 bg-background/80 backdrop-blur border-b">
       <div className="container mx-auto px-4 py-3 flex items-center gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 opacity-60" />
-          <Input
-            type="search"
-            value={search}
-            onChange={(e) => onSearch(e.target.value)}
-            placeholder="Поиск по складу"
-            aria-label="Поиск"
-            className="pl-10"
-          />
-        </div>
+        <SearchWithTagAutocomplete
+          value={search}
+          onChange={onSearch}
+          tags={tags}
+          placeholder="Поиск: название, описание, #тег. Пример: #Медный или #ГОСТ"
+        />
+        {onBarcodeScan && (
+          <Button 
+            variant="outline" 
+            onClick={onBarcodeScan}
+            title="Сканировать штрихкод"
+          >
+            <ScanLine className="h-4 w-4" />
+          </Button>
+        )}
         <Button variant="hero">Найти</Button>
         <ThemeToggle />
       </div>
@@ -37,6 +65,12 @@ export const TopBar = ({ search, onSearch, summary }: TopBarProps) => {
       )}
     </header>
   );
+
+  return isGlassmorphism ? (
+    <GlassmorphismWrapper variant="topbar" className="w-full sticky top-0 z-10">
+      {topBarContent}
+    </GlassmorphismWrapper>
+  ) : topBarContent;
 };
 
 export default TopBar;

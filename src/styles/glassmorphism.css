@@ -1,0 +1,498 @@
+/* Glassmorphism Theme - Redesigned from scratch */
+
+/* CSS Variables for Glassmorphism */
+.glassmorphism-theme {
+  /* Glass effect variables */
+  --glass-bg: rgba(30, 30, 30, 0.25);
+  --glass-bg-hover: rgba(30, 30, 30, 0.35);
+  --glass-border: rgba(255, 255, 255, 0.18);
+  --glass-border-hover: rgba(255, 255, 255, 0.25);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
+  --glass-shadow-hover: 0 12px 40px rgba(0, 0, 0, 0.5);
+  --glass-backdrop: blur(20px);
+  --glass-backdrop-strong: blur(25px);
+  
+  /* Text colors (brighter for contrast) */
+  --glass-text: rgba(245, 250, 255, 0.98);
+  --glass-text-muted: rgba(220, 232, 255, 0.82);
+  --glass-text-secondary: rgba(200, 215, 240, 0.7);
+  
+  /* Accent colors */
+  --glass-accent: rgba(59, 130, 246, 0.8);
+  --glass-accent-hover: rgba(59, 130, 246, 1);
+  --glass-success: rgba(34, 197, 94, 0.8);
+  --glass-warning: rgba(245, 158, 11, 0.8);
+  --glass-error: rgba(239, 68, 68, 0.8);
+  
+  /* Background gradient */
+  --glass-bg-gradient: linear-gradient(135deg, 
+    rgba(15, 15, 15, 0.9) 0%, 
+    rgba(25, 25, 25, 0.8) 50%, 
+    rgba(10, 10, 10, 0.9) 100%);
+  
+  /* Override theme variables */
+  --background: var(--glass-bg-gradient);
+  --foreground: var(--glass-text);
+  --card: var(--glass-bg);
+  --card-foreground: var(--glass-text);
+  --popover: var(--glass-bg);
+  --popover-foreground: var(--glass-text);
+  --primary: var(--glass-accent);
+  --primary-foreground: var(--glass-text);
+  --secondary: rgba(255, 255, 255, 0.1);
+  --secondary-foreground: var(--glass-text);
+  --muted: rgba(255, 255, 255, 0.1);
+  --muted-foreground: var(--glass-text-muted);
+  --accent: var(--glass-accent);
+  --accent-foreground: var(--glass-text);
+  --destructive: var(--glass-error);
+  --destructive-foreground: var(--glass-text);
+  --border: var(--glass-border);
+  --input: var(--glass-bg);
+  --ring: var(--glass-accent);
+}
+
+/* NeoGlass Theme - Dark blue glass inspired by references */
+.neoglass-theme {
+  --glass-bg: rgba(13, 22, 45, 0.35);
+  --glass-bg-hover: rgba(13, 22, 45, 0.45);
+  --glass-border: rgba(102, 153, 255, 0.25);
+  --glass-border-hover: rgba(102, 153, 255, 0.4);
+  --glass-shadow: 0 8px 32px rgba(2, 6, 23, 0.6);
+  --glass-shadow-hover: 0 12px 40px rgba(2, 6, 23, 0.75);
+  --glass-backdrop: blur(22px);
+  --glass-backdrop-strong: blur(28px);
+
+  --glass-text: rgba(240, 248, 255, 0.98);
+  --glass-text-muted: rgba(210, 225, 245, 0.85);
+  --glass-text-secondary: rgba(190, 205, 225, 0.75);
+
+  --glass-accent: rgba(59, 130, 246, 0.9); /* blue */
+  --glass-accent-hover: rgba(96, 165, 250, 1);
+  --glass-success: rgba(74, 222, 128, 0.85);
+  --glass-warning: rgba(250, 204, 21, 0.85);
+  --glass-error: rgba(248, 113, 113, 0.85);
+
+  --glass-bg-gradient: radial-gradient(1200px 800px at 20% 0%, rgba(10, 20, 40, 1) 0%, rgba(6, 12, 24, 1) 35%, rgba(2, 6, 14, 1) 100%);
+
+  --background: var(--glass-bg-gradient);
+  --foreground: var(--glass-text);
+  --card: var(--glass-bg);
+  --card-foreground: var(--glass-text);
+  --popover: var(--glass-bg);
+  --popover-foreground: var(--glass-text);
+  --primary: var(--glass-accent);
+  --primary-foreground: var(--glass-text);
+  --secondary: rgba(255, 255, 255, 0.08);
+  --secondary-foreground: var(--glass-text);
+  --muted: rgba(255, 255, 255, 0.06);
+  --muted-foreground: var(--glass-text-muted);
+  --accent: var(--glass-accent);
+  --accent-foreground: var(--glass-text);
+  --destructive: var(--glass-error);
+  --destructive-foreground: var(--glass-text);
+  --border: var(--glass-border);
+  --input: var(--glass-bg);
+  --ring: var(--glass-accent);
+}
+
+.neoglass-theme {
+  background: var(--glass-bg-gradient);
+  color: var(--glass-text);
+}
+
+/* Base glassmorphism styles */
+.glassmorphism-theme {
+  background: var(--glass-bg-gradient);
+  color: var(--glass-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ensure readability: remap dark text utilities on dark glass themes */
+.glassmorphism-theme,
+.neoglass-theme {
+  color: var(--glass-text);
+}
+
+.glassmorphism-theme .text-black,
+.glassmorphism-theme .text-gray-900,
+.glassmorphism-theme .text-neutral-900,
+.glassmorphism-theme .text-slate-900,
+.glassmorphism-theme .text-zinc-900,
+.glassmorphism-theme .text-stone-900,
+.neoglass-theme .text-black,
+.neoglass-theme .text-gray-900,
+.neoglass-theme .text-neutral-900,
+.neoglass-theme .text-slate-900,
+.neoglass-theme .text-zinc-900,
+.neoglass-theme .text-stone-900 {
+  color: var(--glass-text) !important;
+}
+
+.glassmorphism-theme .text-gray-700,
+.glassmorphism-theme .text-neutral-700,
+.glassmorphism-theme .text-slate-700,
+.glassmorphism-theme .text-zinc-700,
+.glassmorphism-theme .text-stone-700,
+.neoglass-theme .text-gray-700,
+.neoglass-theme .text-neutral-700,
+.neoglass-theme .text-slate-700,
+.neoglass-theme .text-zinc-700,
+.neoglass-theme .text-stone-700 {
+  color: var(--glass-text-muted) !important;
+}
+
+.glassmorphism-theme input::placeholder,
+.glassmorphism-theme textarea::placeholder,
+.neoglass-theme input::placeholder,
+.neoglass-theme textarea::placeholder {
+  color: var(--glass-text-secondary) !important;
+}
+
+/* Force readable text for common elements */
+.glassmorphism-theme h1,
+.glassmorphism-theme h2,
+.glassmorphism-theme h3,
+.glassmorphism-theme h4,
+.glassmorphism-theme h5,
+.glassmorphism-theme h6,
+.glassmorphism-theme p,
+.glassmorphism-theme label,
+.glassmorphism-theme a,
+.neoglass-theme h1,
+.neoglass-theme h2,
+.neoglass-theme h3,
+.neoglass-theme h4,
+.neoglass-theme h5,
+.neoglass-theme h6,
+.neoglass-theme p,
+.neoglass-theme label,
+.neoglass-theme a {
+  color: var(--glass-text) !important;
+}
+
+/* Map darker utility classes (800–900) to light text */
+.glassmorphism-theme .text-gray-800,
+.glassmorphism-theme .text-neutral-800,
+.glassmorphism-theme .text-slate-800,
+.glassmorphism-theme .text-zinc-800,
+.glassmorphism-theme .text-stone-800,
+.neoglass-theme .text-gray-800,
+.neoglass-theme .text-neutral-800,
+.neoglass-theme .text-slate-800,
+.neoglass-theme .text-zinc-800,
+.neoglass-theme .text-stone-800 {
+  color: var(--glass-text) !important;
+}
+
+/* Glassmorphism for cards and containers */
+.glassmorphism-theme .card,
+.glassmorphism-theme [class*="card"],
+.glassmorphism-theme .bg-card,
+.glassmorphism-theme .bg-background {
+  background: var(--glass-bg) !important;
+  -webkit-backdrop-filter: var(--glass-backdrop);
+  backdrop-filter: var(--glass-backdrop);
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 16px !important;
+  box-shadow: var(--glass-shadow) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Reuse the same component styling rules for neoglass */
+.neoglass-theme .card,
+.neoglass-theme [class*="card"],
+.neoglass-theme .bg-card,
+.neoglass-theme .bg-background {
+  background: var(--glass-bg) !important;
+  -webkit-backdrop-filter: var(--glass-backdrop);
+  backdrop-filter: var(--glass-backdrop);
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 16px !important;
+  box-shadow: var(--glass-shadow) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.neoglass-theme .card:hover,
+.neoglass-theme [class*="card"]:hover {
+  background: var(--glass-bg-hover) !important;
+  border-color: var(--glass-border-hover) !important;
+  box-shadow: var(--glass-shadow-hover) !important;
+  transform: translateY(-2px) !important;
+}
+
+.neoglass-theme button,
+.neoglass-theme input,
+.neoglass-theme select,
+.neoglass-theme textarea,
+.neoglass-theme header,
+.neoglass-theme .top-bar,
+.neoglass-theme .sidebar,
+.neoglass-theme aside,
+.neoglass-theme table,
+.neoglass-theme [data-radix-popper-content-wrapper],
+.neoglass-theme .badge,
+.neoglass-theme [class*="badge"] {
+  background: var(--glass-bg) !important;
+  -webkit-backdrop-filter: var(--glass-backdrop);
+  backdrop-filter: var(--glass-backdrop);
+  border: 1px solid var(--glass-border) !important;
+  color: var(--glass-text) !important;
+}
+
+/* NeoGlass background helper for UniversalBackground */
+.neoglass-custom-gradient {
+  background: radial-gradient(1600px 900px at 70% 0%, #0b1226 0%, #0a1020 40%, #070d1a 100%);
+}
+
+/* Light theme neutral gradient helper */
+.light-neutral-gradient {
+  background: linear-gradient(135deg, #f5f7fa 0%, #eef1f5 50%, #e6e9ef 100%);
+}
+
+.glassmorphism-theme .card:hover,
+.glassmorphism-theme [class*="card"]:hover {
+  background: var(--glass-bg-hover) !important;
+  border-color: var(--glass-border-hover) !important;
+  box-shadow: var(--glass-shadow-hover) !important;
+  transform: translateY(-2px) !important;
+}
+
+/* Glassmorphism for buttons */
+.glassmorphism-theme button {
+  background: var(--glass-bg) !important;
+  -webkit-backdrop-filter: var(--glass-backdrop);
+  backdrop-filter: var(--glass-backdrop);
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 12px !important;
+  box-shadow: var(--glass-shadow) !important;
+  color: var(--glass-text) !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.glassmorphism-theme button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  transition: left 0.5s;
+}
+
+.glassmorphism-theme button:hover::before {
+  left: 100%;
+}
+
+.glassmorphism-theme button:hover {
+  background: var(--glass-bg-hover) !important;
+  border-color: var(--glass-border-hover) !important;
+  box-shadow: var(--glass-shadow-hover) !important;
+  transform: translateY(-1px) !important;
+}
+
+.glassmorphism-theme button:active {
+  transform: translateY(0) !important;
+  box-shadow: var(--glass-shadow) !important;
+}
+
+/* Primary button special styling */
+.glassmorphism-theme button[class*="bg-primary"],
+.glassmorphism-theme .bg-primary {
+  background: var(--glass-accent) !important;
+  border-color: var(--glass-accent) !important;
+  color: white !important;
+}
+
+.glassmorphism-theme button[class*="bg-primary"]:hover {
+  background: var(--glass-accent-hover) !important;
+  border-color: var(--glass-accent-hover) !important;
+  box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4) !important;
+}
+
+/* Glassmorphism for inputs */
+.glassmorphism-theme input,
+.glassmorphism-theme select,
+.glassmorphism-theme textarea {
+  background: var(--glass-bg) !important;
+  -webkit-backdrop-filter: var(--glass-backdrop);
+  backdrop-filter: var(--glass-backdrop);
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 12px !important;
+  color: var(--glass-text) !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.glassmorphism-theme input:focus,
+.glassmorphism-theme select:focus,
+.glassmorphism-theme textarea:focus {
+  background: var(--glass-bg-hover) !important;
+  border-color: var(--glass-accent) !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2) !important;
+  outline: none !important;
+}
+
+/* Glassmorphism for tables */
+.glassmorphism-theme table {
+  background: var(--glass-bg) !important;
+  -webkit-backdrop-filter: var(--glass-backdrop);
+  backdrop-filter: var(--glass-backdrop);
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 16px !important;
+  box-shadow: var(--glass-shadow) !important;
+  overflow: hidden !important;
+}
+
+.glassmorphism-theme th {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: var(--glass-text) !important;
+  border-bottom: 1px solid var(--glass-border) !important;
+  font-weight: 600 !important;
+}
+
+.glassmorphism-theme td {
+  color: var(--glass-text) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+.glassmorphism-theme tr:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Glassmorphism for sidebar */
+.glassmorphism-theme .sidebar,
+.glassmorphism-theme aside {
+  background: var(--glass-bg) !important;
+  -webkit-backdrop-filter: var(--glass-backdrop-strong);
+  backdrop-filter: var(--glass-backdrop-strong);
+  border-right: 1px solid var(--glass-border) !important;
+  box-shadow: var(--glass-shadow) !important;
+}
+
+/* Glassmorphism for header */
+.glassmorphism-theme header,
+.glassmorphism-theme .top-bar {
+  background: var(--glass-bg) !important;
+  -webkit-backdrop-filter: var(--glass-backdrop-strong);
+  backdrop-filter: var(--glass-backdrop-strong);
+  border-bottom: 1px solid var(--glass-border) !important;
+  box-shadow: var(--glass-shadow) !important;
+}
+
+/* Calculator specific styling */
+.glassmorphism-theme .draggable-calculator {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.glassmorphism-theme .draggable-calculator .card {
+  background: var(--glass-bg) !important;
+  -webkit-backdrop-filter: var(--glass-backdrop-strong);
+  backdrop-filter: var(--glass-backdrop-strong);
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 20px !important;
+  box-shadow: var(--glass-shadow) !important;
+  will-change: transform !important;
+}
+
+/* Draggable Calculator */
+.draggable-calculator {
+  position: fixed;
+  z-index: 9999;
+  width: 20rem;
+  -webkit-user-select: none;
+  user-select: none;
+  transform: translate3d(var(--calc-x, 100px), var(--calc-y, 100px), 0);
+  will-change: transform;
+  pointer-events: auto;
+}
+
+.calculator-window {
+  z-index: 9999;
+}
+
+.draggable-calculator.dragging {
+  cursor: grabbing;
+  pointer-events: auto;
+}
+
+.draggable-calculator:not(.dragging) {
+  cursor: grab;
+}
+
+/* Glassmorphism for badges and small elements */
+.glassmorphism-theme .badge,
+.glassmorphism-theme [class*="badge"] {
+  background: var(--glass-bg) !important;
+  -webkit-backdrop-filter: var(--glass-backdrop);
+  backdrop-filter: var(--glass-backdrop);
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 8px !important;
+  color: var(--glass-text) !important;
+  box-shadow: var(--glass-shadow) !important;
+}
+
+/* Glassmorphism for tooltips */
+.glassmorphism-theme [data-radix-popper-content-wrapper] {
+  background: var(--glass-bg) !important;
+  -webkit-backdrop-filter: var(--glass-backdrop-strong);
+  backdrop-filter: var(--glass-backdrop-strong);
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 12px !important;
+  color: var(--glass-text) !important;
+  box-shadow: var(--glass-shadow) !important;
+}
+
+/* Performance optimizations */
+.glassmorphism-theme * {
+  transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Reduce motion for better performance */
+@media (prefers-reduced-motion: reduce) {
+  .glassmorphism-theme * {
+    transition: none !important;
+    animation: none !important;
+  }
+  
+  .glassmorphism-theme button::before {
+    display: none !important;
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .draggable-calculator {
+    width: 18rem;
+  }
+  
+  .glassmorphism-theme .card,
+  .glassmorphism-theme [class*="card"] {
+    border-radius: 12px !important;
+  }
+}
+
+/* Custom gradients based on color palette */
+.dark-custom-gradient {
+  background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 25%, #3a3a3a 50%, #4a4a4a 75%, #5a5a5a 100%);
+}
+
+.glassmorphism-custom-gradient {
+  background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 25%, #3a3a3a 50%, #4a4a4a 75%, #5a5a5a 100%);
+}
+
+/* Background drone image */
+.background-drone {
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwMCIgaGVpZ2h0PSI4MDAiIHZpZXdCb3g9IjAgMCAxMjAwIDgwMCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjEyMDAiIGhlaWdodD0iODAwIiBmaWxsPSIjMDAwMDAwIi8+CjxyZWN0IHg9IjQwMCIgeT0iMjAwIiB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgcng9IjIwIiBmaWxsPSIjMTExMTExIi8+CjxyZWN0IHg9IjQ1MCIgeT0iMjUwIiB3aWR0aD0iMzAwIiBoZWlnaHQ9IjMwMCIgcng9IjE1IiBmaWxsPSIjMjIyMjIyIi8+CjxyZWN0IHg9IjUwMCIgeT0iMzAwIiB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgcng9IjEwIiBmaWxsPSIjMzMzMzMzIi8+CjxyZWN0IHg9IjUyNSIgeT0iMzI1IiB3aWR0aD0iMTUwIiBoZWlnaHQ9IjE1MCIgcng9IjgiIGZpbGw9IiM0NDQ0NDQiLz4KPHJlY3QgeD0iNTUwIiB5PSIzNTAiIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiByeD0iNSIgZmlsbD0iIzU1NTU1NSIvPgo8Y2lyY2xlIGN4PSI2MDAiIGN5PSI0MDAiIHI9IjMwIiBmaWxsPSIjNjY2NjY2Ii8+CjxjaXJjbGUgY3g9IjYwMCIgY3k9IjQwMCIgcj0iMjAiIGZpbGw9IiM3Nzc3NzciLz4KPHJlY3QgeD0iNTkwIiB5PSIzOTAiIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCIgcng9IjMiIGZpbGw9IiM4ODg4ODgiLz4KPHJlY3QgeD0iNTkwIiB5PSIzOTAiIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCIgcng9IjMiIGZpbGw9IiM5OTk5OTkiLz4KPC9zdmc+");
+  filter: blur(2px) brightness(0.3);
+}
+
+/* Debug indicator removed */

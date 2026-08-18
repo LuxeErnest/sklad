@@ -1,6 +1,6 @@
 import Sidebar from "@/components/layout/Sidebar";
 import TopBar from "@/components/layout/TopBar";
-import BackgroundGlow from "@/components/common/BackgroundGlow";
+import UniversalBackground from "@/components/UniversalBackground";
 import Seo from "@/components/seo/Seo";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { 
   Calculator as CalcIcon, 
-  DollarSign, 
+  Banknote, 
   Package, 
   TrendingUp, 
   Search, 
@@ -29,10 +29,26 @@ import {
   ShoppingCart,
   Save,
   Copy,
-  Download
+  FileText,
+  Calendar,
+  TrendingDown,
+  Plus
 } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { 
+  getComponentUsageHistory, 
+  addComponentUsageHistory,
+  getConfigurationBuilds, 
+  getWarehouseStatistics,
+  getConfigurations,
+  getConfigurationComponents,
+  assembleConfiguration
+} from "@/lib/db";
+import * as XLSX from 'xlsx';
+import { formatCurrency } from "@/lib/utils";
+import { useApp } from "@/contexts/AppContext";
+import { ItemLink } from "@/components/common/ItemLink";
 
 // Type definitions for better type safety
 type AvailabilityStatus = 'available' | 'partial' | 'unavailable' | 'missing';
@@ -48,122 +64,86 @@ interface AvailabilityItem {
   stockComponent: any | null;
 }
 
-// Enhanced mock data with more warehouse-relevant information (fallback)
-const mockComponents = [
-  { id: 1, name: "SSD 1TB", quantity: 12, category: "Накопители", location: "Склад А-12", price: 150, minStock: 2 },
-  { id: 2, name: "DDR4 16GB", quantity: 34, category: "Память", location: "Склад B-02", price: 80, minStock: 5 },
-  { id: 3, name: "CPU Ryzen 7", quantity: 5, category: "Процессоры", location: "Склад А-03", price: 300, minStock: 1 },
-  { id: 4, name: "SATA кабель", quantity: 120, category: "Кабели", location: "Склад C-01", price: 5, minStock: 10 },
-  { id: 5, name: "Материнская плата", quantity: 8, category: "Платы", location: "Склад А-05", price: 200, minStock: 2 },
-  { id: 6, name: "Блок питания 650W", quantity: 15, category: "Питание", location: "Склад B-08", price: 120, minStock: 3 },
-  { id: 7, name: "Видеокарта RTX 4060", quantity: 3, category: "Видеокарты", location: "Склад А-07", price: 450, minStock: 1 },
-  { id: 8, name: "Корпус ATX", quantity: 20, category: "Корпуса", location: "Склад C-03", price: 80, minStock: 5 },
-];
-
-const mockConfigurations = [
-  {
-    id: 1,
-    name: "Игровой ПК",
-    description: "Конфигурация для игрового компьютера",
-    priority: "high",
-    components: [
-      { componentId: 3, quantity: 1, name: "CPU Ryzen 7" },
-      { componentId: 5, quantity: 1, name: "Материнская плата" },
-      { componentId: 2, quantity: 2, name: "DDR4 16GB" },
-      { componentId: 1, quantity: 1, name: "SSD 1TB" },
-      { componentId: 6, quantity: 1, name: "Блок питания 650W" },
-      { componentId: 7, quantity: 1, name: "Видеокарта RTX 4060" },
-      { componentId: 8, quantity: 1, name: "Корпус ATX" },
-    ],
-    totalValue: 1530,
-    totalItems: 8,
-    createdAt: "2025-08-01",
-  },
-  {
-    id: 2,
-    name: "Офисный ПК",
-    description: "Конфигурация для офисного компьютера",
-    priority: "medium",
-    components: [
-      { componentId: 3, quantity: 1, name: "CPU Ryzen 7" },
-      { componentId: 5, quantity: 1, name: "Материнская плата" },
-      { componentId: 2, quantity: 1, name: "DDR4 16GB" },
-      { componentId: 1, quantity: 1, name: "SSD 1TB" },
-      { componentId: 6, quantity: 1, name: "Блок питания 650W" },
-      { componentId: 8, quantity: 1, name: "Корпус ATX" },
-    ],
-    totalValue: 1080,
-    totalItems: 6,
-    createdAt: "2025-08-05",
-  },
-  {
-    id: 3,
-    name: "Серверная сборка",
-    description: "Конфигурация для сервера",
-    priority: "low",
-    components: [
-      { componentId: 3, quantity: 2, name: "CPU Ryzen 7" },
-      { componentId: 5, quantity: 1, name: "Материнская плата" },
-      { componentId: 2, quantity: 4, name: "DDR4 16GB" },
-      { componentId: 1, quantity: 2, name: "SSD 1TB" },
-      { componentId: 6, quantity: 1, name: "Блок питания 650W" },
-    ],
-    totalValue: 1860,
-    totalItems: 10,
-    createdAt: "2025-08-10",
-  },
-];
+// Empty arrays for clean start
+const mockComponents: any[] = [];
+const mockConfigurations: any[] = [];
 
 const Calculator = () => {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedItems, setSelectedItems] = useState<{[key: number]: number}>({});
-  const [activeTab, setActiveTab] = useState("configurations");
+  const [activeTab, setActiveTab] = useState("analytics");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [availabilityFilter, setAvailabilityFilter] = useState<string>("all");
+  const { items, categories, refreshItems, reservedQuantities } = useApp();
   const [isLoading, setIsLoading] = useState(false);
-  const [components, setComponents] = useState<any[]>(mockComponents);
   const [configurations, setConfigurations] = useState<any[]>(mockConfigurations);
+  const [warehouseStats, setWarehouseStats] = useState<any>({});
+  const [showPlanningStats, setShowPlanningStats] = useState(false);
+  const [showDetailedAnalytics, setShowDetailedAnalytics] = useState(true);
+  const [scrappedItems, setScrappedItems] = useState<any[]>([]);
 
-  // Load data from DB (or localStorage fallback) and compute derived fields
+  // Use items from context with minStock
+  const components = useMemo(() => 
+    items.map((r: any) => ({ ...r, minStock: r.minStock ?? 0 })),
+    [items]
+  );
+
+  // Load configurations and additional data
   const loadData = async () => {
     try {
-      const { getComponents, getConfigurations, getConfigurationComponents } = await import("@/lib/db");
-      const rows = await getComponents();
-      if (Array.isArray(rows) && rows.length > 0) {
-        setComponents(rows.map((r: any) => ({ ...r, minStock: r.minStock ?? 0 })));
-      } else {
-        setComponents(mockComponents);
-      }
-
-      // Load configurations if any exist in DB; otherwise fallback
+      // Load configurations if any exist in DB
       const cfgs = await getConfigurations();
       if (Array.isArray(cfgs) && cfgs.length > 0) {
         const full = [] as any[];
         for (const c of cfgs) {
           const comps = await getConfigurationComponents(c.id);
-          const componentsList = comps.map((cc: any) => ({ componentId: cc.componentId, quantity: cc.quantity, name: (rows.find((r: any)=> r.id===cc.componentId)?.name) || "" }));
+          const componentsList = comps.map((cc: any) => ({ 
+            componentId: cc.componentId, 
+            quantity: cc.quantity, 
+            name: items.find((r: any) => r.id === cc.componentId)?.name || "" 
+          }));
           const totalItems = componentsList.reduce((s: number, it: any) => s + it.quantity, 0);
           const totalValue = componentsList.reduce((s: number, it: any) => {
-            const comp = (rows as any[]).find((r: any) => r.id === it.componentId);
+            const comp = items.find((r: any) => r.id === it.componentId);
             return s + (comp?.price || 0) * it.quantity;
           }, 0);
-          full.push({ ...c, components: componentsList, totalItems, totalValue, priority: "medium" });
+          full.push({ ...c, components: componentsList, totalItems, totalValue, priority: c.priority || "medium" });
         }
         setConfigurations(full);
       } else {
         setConfigurations(mockConfigurations);
       }
-    } catch {
-      setComponents(mockComponents);
+
+      // Load additional data
+      const stats = await getWarehouseStatistics();
+      setWarehouseStats(stats);
+      
+      // Load scrapped items
+      const { getScrappedItems } = await import("@/lib/db");
+      const scrapped = await getScrappedItems();
+      setScrappedItems(scrapped);
+    } catch (error) {
+      console.error('Error loading calculator data:', error);
       setConfigurations(mockConfigurations);
+      setWarehouseStats({});
+      setScrappedItems([]);
     }
   };
 
-  useEffect(() => { loadData(); }, []);
-
-  const categories = useMemo(() => Array.from(new Set(components.map(item => item.category))), [components]);
+  useEffect(() => { 
+    loadData();
+    
+    const handleConfigurationsUpdated = () => {
+      loadData();
+    };
+    
+    window.addEventListener('configurationsUpdated', handleConfigurationsUpdated);
+    return () => {
+      window.removeEventListener('configurationsUpdated', handleConfigurationsUpdated);
+    };
+  }, [items]);
   
   const filteredComponents = useMemo(() => {
     if (!search && selectedCategory === "all") {
@@ -199,7 +179,8 @@ const Calculator = () => {
         stockComponent: null
       };
       
-      const available = stockComponent.quantity;
+      const reserved = reservedQuantities[comp.componentId] ?? 0;
+      const available = Math.max(0, stockComponent.quantity - reserved);
       const required = comp.quantity;
       const maxBuilds = Math.floor(available / required);
       const status: AvailabilityStatus = available >= required ? 'available' : available > 0 ? 'partial' : 'unavailable';
@@ -238,14 +219,14 @@ const Calculator = () => {
   // Calculate manual selection totals
   const manualCalculations = useMemo(() => {
     const totalValue = Object.entries(selectedItems).reduce((sum, [itemId, quantity]) => {
-      const item = mockComponents.find(i => i.id === parseInt(itemId));
+      const item = components.find(i => i.id === parseInt(itemId));
       return sum + (item ? item.price * quantity : 0);
     }, 0);
 
     const totalItems = Object.values(selectedItems).reduce((sum, qty) => sum + qty, 0);
     
     const categoryBreakdown = Object.entries(selectedItems).reduce((acc, [itemId, quantity]) => {
-      const item = mockComponents.find(i => i.id === parseInt(itemId));
+      const item = components.find(i => i.id === parseInt(itemId));
       if (item) {
         acc[item.category] = (acc[item.category] || 0) + (item.price * quantity);
       }
@@ -254,7 +235,7 @@ const Calculator = () => {
 
     // Calculate stock warnings
     const stockWarnings = Object.entries(selectedItems).map(([itemId, quantity]) => {
-      const item = mockComponents.find(i => i.id === parseInt(itemId));
+      const item = components.find(i => i.id === parseInt(itemId));
       if (!item) return null;
       
       const remaining = item.quantity - quantity;
@@ -270,7 +251,7 @@ const Calculator = () => {
     }).filter(Boolean);
 
     return { totalValue, totalItems, categoryBreakdown, stockWarnings };
-  }, [selectedItems]);
+  }, [selectedItems, components]);
 
   // Warehouse analytics
   const warehouseAnalytics = useMemo(() => {
@@ -300,7 +281,7 @@ const Calculator = () => {
       canBuildHighPriority,
       totalConfigurations: configurations.length
     };
-  }, [components, configurations]);
+  }, [components, configurations, reservedQuantities]);
 
   const updateQuantity = (itemId: number, quantity: number) => {
     // Validate quantity against available stock
@@ -336,22 +317,27 @@ const Calculator = () => {
     console.log('Saving calculation:', calculation);
   };
 
-  // Function to build configuration with validation
-  const buildConfiguration = (config: typeof mockConfigurations[0]) => {
+  // Function to build configuration: резервирует компоненты (сборка без списания со склада)
+  const buildConfiguration = async (config: typeof mockConfigurations[0]) => {
+    const availability = calculateConfigurationAvailability(config);
+    if (availability.maxPossibleBuilds === 0) {
+      alert('Недостаточно компонентов для сборки этой конфигурации');
+      return;
+    }
     setIsLoading(true);
-    
     try {
-      const availability = calculateConfigurationAvailability(config);
-      
-      if (availability.maxPossibleBuilds === 0) {
-        alert('Недостаточно компонентов для сборки этой конфигурации');
-        return;
+      const res = await assembleConfiguration({
+        configurationId: config.id,
+        quantity: availability.maxPossibleBuilds,
+        notes: 'Сборка из калькулятора',
+      });
+      if (res.success) {
+        await loadData();
+        refreshItems();
+        alert(`Сборка ${availability.maxPossibleBuilds} единиц ${config.name} завершена. Компоненты зарезервированы в конфигурации.`);
+      } else {
+        alert(res.error || 'Ошибка при сборке конфигурации');
       }
-      
-      // In a real app, this would update the inventory
-      console.log(`Building ${availability.maxPossibleBuilds} units of ${config.name}`);
-      alert(`Сборка ${availability.maxPossibleBuilds} единиц ${config.name} начата`);
-      
     } catch (error) {
       console.error('Error building configuration:', error);
       alert('Ошибка при сборке конфигурации');
@@ -359,6 +345,7 @@ const Calculator = () => {
       setIsLoading(false);
     }
   };
+
 
   const getPriorityBadge = (priority: string) => {
     switch (priority) {
@@ -371,6 +358,42 @@ const Calculator = () => {
       default:
         return null;
     }
+  };
+
+  // Function to download warehouse report as Excel
+  const downloadWarehouseReport = () => {
+    // Prepare data for Excel
+    const excelData = components.map(item => ({
+      'Наименование': item.name,
+      'Категория': item.category,
+      'Количество (шт.)': item.quantity,
+      'Расположение': item.location,
+      'Цена (₽)': item.price || 0,
+      'Общая стоимость (₽)': (item.price || 0) * item.quantity,
+      'Последнее обновление': item.lastUpdated || 'Не указано'
+    }));
+    
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 30 }, // Наименование
+      { wch: 20 }, // Категория
+      { wch: 15 }, // Количество
+      { wch: 20 }, // Расположение
+      { wch: 15 }, // Цена
+      { wch: 20 }, // Общая стоимость
+      { wch: 20 }  // Последнее обновление
+    ];
+    
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Отчет по складу');
+    
+    // Generate and download file
+    const fileName = `warehouse_report_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
   };
 
   const getAvailabilityIcon = (status: AvailabilityStatus) => {
@@ -395,13 +418,13 @@ const Calculator = () => {
   return (
     <div className="min-h-screen relative">
       <Seo 
-        title="Калькулятор склада — анализ и планирование"
-        description="Продвинутый калькулятор для анализа склада, расчета конфигураций и планирования закупок."
+        title="Статистика склада — анализ и планирование"
+        description="Продвинутая статистика для анализа склада, расчета конфигураций и планирования закупок."
         canonical="/calculator"
       />
 
       <div className="absolute inset-0 -z-10">
-        <BackgroundGlow />
+        <UniversalBackground />
       </div>
 
       <div className="grid grid-cols-[auto_1fr]">
@@ -413,7 +436,7 @@ const Calculator = () => {
             <div className="flex items-center gap-3 mb-6">
               <CalcIcon className="h-8 w-8 text-primary" />
               <div>
-                <h1 className="text-3xl font-bold">Калькулятор склада</h1>
+                <h1 className="text-3xl font-bold">Статистика склада</h1>
                 <p className="text-muted-foreground">Анализ доступности, планирование сборок и управление запасами</p>
               </div>
             </div>
@@ -423,9 +446,9 @@ const Calculator = () => {
               <Card>
                 <CardContent className="p-4">
                   <div className="flex items-center gap-2">
-                    <DollarSign className="h-5 w-5 text-primary" />
+                    <Banknote className="h-5 w-5 text-primary" />
                     <div>
-                      <div className="text-2xl font-bold">{warehouseAnalytics.totalStockValue.toLocaleString()}₽</div>
+                      <div className="text-2xl font-bold">{formatCurrency(warehouseAnalytics.totalStockValue)}</div>
                       <div className="text-sm text-muted-foreground">Общая стоимость склада</div>
                     </div>
                   </div>
@@ -468,13 +491,13 @@ const Calculator = () => {
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
               <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="configurations" className="flex items-center gap-2">
-                  <Target className="h-4 w-4" />
-                  Конфигурации
-                </TabsTrigger>
                 <TabsTrigger value="manual" className="flex items-center gap-2">
                   <CalcIcon className="h-4 w-4" />
                   Ручной расчет
+                </TabsTrigger>
+                <TabsTrigger value="scrap" className="flex items-center gap-2">
+                  <XCircle className="h-4 w-4" />
+                  Списания
                 </TabsTrigger>
                 <TabsTrigger value="analytics" className="flex items-center gap-2">
                   <BarChart3 className="h-4 w-4" />
@@ -483,20 +506,21 @@ const Calculator = () => {
               </TabsList>
 
               <TabsContent value="configurations" className="space-y-6">
-                <div className="flex gap-4 mb-4">
-                  <div className="flex-1">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                  <div className="lg:col-span-2">
                     <Label htmlFor="config-search">Поиск конфигураций</Label>
                     <Input
                       id="config-search"
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                       placeholder="Найти конфигурацию..."
+                      className="mt-1"
                     />
                   </div>
-                  <div className="w-48">
+                  <div>
                     <Label htmlFor="priority-filter">Приоритет</Label>
                     <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                      <SelectTrigger>
+                      <SelectTrigger className="mt-1">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -507,10 +531,10 @@ const Calculator = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="w-48">
+                  <div>
                     <Label htmlFor="availability-filter">Доступность</Label>
                     <Select value={availabilityFilter} onValueChange={setAvailabilityFilter}>
-                      <SelectTrigger>
+                      <SelectTrigger className="mt-1">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -523,7 +547,70 @@ const Calculator = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Quick Stats */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                  <Card>
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-2">
+                        <Target className="h-5 w-5 text-primary" />
+                        <div>
+                          <div className="text-2xl font-bold">{filteredConfigurations.length}</div>
+                          <div className="text-sm text-muted-foreground">Всего конфигураций</div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="h-5 w-5 text-green-500" />
+                        <div>
+                          <div className="text-2xl font-bold">
+                            {filteredConfigurations.filter(config => {
+                              const availability = calculateConfigurationAvailability(config);
+                              return availability.maxPossibleBuilds > 0;
+                            }).length}
+                          </div>
+                          <div className="text-sm text-muted-foreground">Доступны</div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-5 w-5 text-yellow-500" />
+                        <div>
+                          <div className="text-2xl font-bold">
+                            {filteredConfigurations.filter(config => {
+                              const availability = calculateConfigurationAvailability(config);
+                              return availability.anyAvailable && !availability.allAvailable;
+                            }).length}
+                          </div>
+                          <div className="text-sm text-muted-foreground">Частично</div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-2">
+                        <XCircle className="h-5 w-5 text-red-500" />
+                        <div>
+                          <div className="text-2xl font-bold">
+                            {filteredConfigurations.filter(config => {
+                              const availability = calculateConfigurationAvailability(config);
+                              return availability.noneAvailable;
+                            }).length}
+                          </div>
+                          <div className="text-sm text-muted-foreground">Недоступны</div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                   {filteredConfigurations.map(config => {
                     const availability = calculateConfigurationAvailability(config);
                     const isAvailable = availability.maxPossibleBuilds > 0;
@@ -534,18 +621,20 @@ const Calculator = () => {
                     if (availabilityFilter === "unavailable" && !availability.noneAvailable) return null;
 
                     return (
-                      <Card key={config.id} className="hover:shadow-lg transition-shadow">
-                        <CardHeader>
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <CardTitle className="flex items-center gap-2">
+                      <Card key={config.id} className="hover:shadow-lg transition-all duration-200 hover:scale-[1.02]">
+                        <CardHeader className="pb-3">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <CardTitle className="flex items-center gap-2 text-lg">
                                 {config.name}
                                 {getPriorityBadge(config.priority)}
                               </CardTitle>
-                              <CardDescription>{config.description}</CardDescription>
+                              {config.description && (
+                                <CardDescription className="mt-1">{config.description}</CardDescription>
+                              )}
                             </div>
-                            <div className="text-right">
-                              <div className="text-2xl font-bold text-primary">
+                            <div className="text-right ml-4">
+                              <div className="text-3xl font-bold text-primary">
                                 {availability.maxPossibleBuilds}
                               </div>
                               <div className="text-sm text-muted-foreground">можно собрать</div>
@@ -553,17 +642,21 @@ const Calculator = () => {
                           </div>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="text-center p-3 bg-primary/5 rounded-lg">
-                              <div className="text-lg font-bold">{config.totalItems}</div>
-                              <div className="text-sm text-muted-foreground">компонентов</div>
+                          {/* Stats Grid */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="text-center p-3 bg-primary/5 rounded-lg border">
+                              <div className="text-xl font-bold text-primary">{config.totalItems}</div>
+                              <div className="text-xs text-muted-foreground">компонентов</div>
                             </div>
-                            <div className="text-center p-3 bg-primary/5 rounded-lg">
-                              <div className="text-lg font-bold">{(config.totalValue * availability.maxPossibleBuilds).toLocaleString()}₽</div>
-                              <div className="text-sm text-muted-foreground">общая стоимость</div>
+                            <div className="text-center p-3 bg-green-50 rounded-lg border">
+                              <div className="text-xl font-bold text-green-600">
+                                {(config.totalValue * availability.maxPossibleBuilds).toLocaleString()}₽
+                              </div>
+                              <div className="text-xs text-muted-foreground">общая стоимость</div>
                             </div>
                           </div>
 
+                          {/* Availability Progress */}
                           <div>
                             <div className="flex items-center justify-between mb-2">
                               <span className="text-sm font-medium">Доступность компонентов</span>
@@ -571,42 +664,56 @@ const Calculator = () => {
                                 {availability.availableCount}/{availability.totalCount}
                               </span>
                             </div>
-                            <Progress value={(availability.availableCount / availability.totalCount) * 100} className="h-2" />
+                            <Progress 
+                              value={(availability.availableCount / availability.totalCount) * 100} 
+                              className="h-2"
+                            />
                           </div>
 
+                          {/* Component List */}
                           <div className="space-y-2">
-                            {availability.items.slice(0, 3).map((item, index) => (
-                              <div key={index} className="flex items-center justify-between text-sm">
-                                <div className="flex items-center gap-2">
-                                  {getAvailabilityIcon(item.status)}
-                                  <span>{item.name}</span>
+                            <h4 className="text-sm font-medium text-muted-foreground">Компоненты:</h4>
+                            <div className="space-y-1 max-h-32 overflow-y-auto">
+                              {availability.items.slice(0, 4).map((item, index) => (
+                                <div key={index} className="flex items-center justify-between text-sm p-2 rounded bg-muted/30">
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    {getAvailabilityIcon(item.status)}
+                                    <ItemLink 
+                                      itemId={item.componentId || 0} 
+                                      itemName={item.name} 
+                                      variant="ghost" 
+                                      size="sm"
+                                      className="truncate"
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    <Badge variant="secondary" className="text-xs">{item.required} шт.</Badge>
+                                    <span className="text-xs text-muted-foreground">
+                                      {item.available}/{item.required}
+                                    </span>
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                  <Badge variant="secondary">{item.required} шт.</Badge>
-                                  <span className="text-muted-foreground">
-                                    {item.available}/{item.required}
-                                  </span>
+                              ))}
+                              {availability.items.length > 4 && (
+                                <div className="text-xs text-muted-foreground text-center py-1">
+                                  +{availability.items.length - 4} еще компонентов
                                 </div>
-                              </div>
-                            ))}
-                            {availability.items.length > 3 && (
-                              <div className="text-sm text-muted-foreground text-center">
-                                +{availability.items.length - 3} еще
-                              </div>
-                            )}
+                              )}
+                            </div>
                           </div>
 
-                          <div className="flex gap-2">
+                          {/* Action Buttons */}
+                          <div className="flex gap-2 pt-2">
                             <Button 
                               size="sm" 
-                              className="flex-1" 
+                              className="flex-1 transition-all duration-200 hover:scale-105" 
                               disabled={!isAvailable || isLoading}
                               onClick={() => buildConfiguration(config)}
                             >
                               <ShoppingCart className="h-4 w-4 mr-2" />
                               {isLoading ? 'Сборка...' : 'Собрать'}
                             </Button>
-                            <Button size="sm" variant="outline">
+                            <Button size="sm" variant="outline" title="Подробная информация" className="transition-all duration-200 hover:scale-105">
                               <Info className="h-4 w-4" />
                             </Button>
                           </div>
@@ -615,6 +722,23 @@ const Calculator = () => {
                     );
                   })}
                 </div>
+
+                {/* Empty State */}
+                {filteredConfigurations.length === 0 && (
+                  <Card className="text-center py-12">
+                    <CardContent>
+                      <Target className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="text-lg font-medium mb-2">Конфигурации не найдены</h3>
+                      <p className="text-muted-foreground mb-4">
+                        Попробуйте изменить фильтры или создать новую конфигурацию
+                      </p>
+                      <Button onClick={() => navigate('/configurations')}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Создать конфигурацию
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
               </TabsContent>
 
               <TabsContent value="manual" className="space-y-6">
@@ -656,7 +780,13 @@ const Calculator = () => {
                           <div key={item.id} className="border rounded-lg p-4">
                             <div className="flex items-center justify-between">
                               <div className="flex-1">
-                                <h4 className="font-medium">{item.name}</h4>
+                                <ItemLink 
+                                  itemId={item.id} 
+                                  itemName={item.name} 
+                                  variant="ghost" 
+                                  size="sm"
+                                  className="font-medium"
+                                />
                                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
                                   <span>{item.category}</span>
                                   <span>В наличии: {item.quantity} шт.</span>
@@ -680,6 +810,7 @@ const Calculator = () => {
                                   size="sm"
                                   variant={selectedItems[item.id] ? "default" : "outline"}
                                   onClick={() => updateQuantity(item.id, selectedItems[item.id] ? 0 : 1)}
+                                  className="transition-all duration-200 hover:scale-105"
                                 >
                                   {selectedItems[item.id] ? "Убрать" : "Добавить"}
                                 </Button>
@@ -702,8 +833,8 @@ const Calculator = () => {
                       <CardContent className="space-y-4">
                         <div className="grid grid-cols-2 gap-4">
                           <div className="text-center p-4 bg-primary/5 rounded-lg">
-                            <DollarSign className="h-8 w-8 text-primary mx-auto mb-2" />
-                            <div className="text-2xl font-bold">{manualCalculations.totalValue.toLocaleString()}₽</div>
+                            <Banknote className="h-8 w-8 text-primary mx-auto mb-2" />
+                            <div className="text-2xl font-bold">{formatCurrency(manualCalculations.totalValue)}</div>
                             <div className="text-sm text-muted-foreground">Общая стоимость</div>
                           </div>
                           <div className="text-center p-4 bg-primary/5 rounded-lg">
@@ -735,7 +866,12 @@ const Calculator = () => {
                               <div className="space-y-2">
                                 {manualCalculations.stockWarnings.map((warning, index) => (
                                   <div key={index} className="flex justify-between items-center text-sm">
-                                    <span>{warning.item.name}</span>
+                                    <ItemLink 
+                                      itemId={warning.item.id} 
+                                      itemName={warning.item.name} 
+                                      variant="ghost" 
+                                      size="sm"
+                                    />
                                     <Badge variant={warning.warningLevel === 'critical' ? 'destructive' : 'secondary'}>
                                       Останется: {warning.remaining}
                                     </Badge>
@@ -750,33 +886,39 @@ const Calculator = () => {
 
                         <div>
                           <h4 className="font-medium mb-3">Выбранные товары</h4>
-                          <div className="space-y-2 max-h-64 overflow-y-auto">
-                            {Object.entries(selectedItems).map(([itemId, quantity]) => {
-                              const item = mockComponents.find(i => i.id === parseInt(itemId));
-                              if (!item) return null;
-                              return (
-                                <div key={itemId} className="flex justify-between items-center text-sm">
-                                  <div>
-                                    <div className="font-medium">{item.name}</div>
-                                    <div className="text-muted-foreground">{quantity} × {item.price}₽</div>
-                                  </div>
-                                  <div className="font-medium">{(quantity * item.price).toLocaleString()}₽</div>
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                          {Object.entries(selectedItems).map(([itemId, quantity]) => {
+                            const item = components.find(i => i.id === parseInt(itemId));
+                            if (!item) return null;
+                            return (
+                              <div key={itemId} className="flex justify-between items-center text-sm">
+                                <div>
+                                  <ItemLink 
+                                    itemId={item.id} 
+                                    itemName={item.name} 
+                                    variant="ghost" 
+                                    size="sm"
+                                    className="font-medium"
+                                  />
+                                  <div className="text-muted-foreground">{quantity} × {item.price}₽</div>
                                 </div>
-                              );
-                            })}
-                          </div>
+                                <div className="font-medium">{(quantity * item.price).toLocaleString()}₽</div>
+                              </div>
+                            );
+                          })}
+                        </div>
                         </div>
 
                         <div className="flex gap-2">
                           <Button 
-                            className="flex-1" 
+                            className="flex-1 transition-all duration-200 hover:scale-105" 
                             onClick={clearSelections}
                             variant="outline"
                           >
                             Очистить
                           </Button>
                           <Button 
-                            className="flex-1"
+                            className="flex-1 transition-all duration-200 hover:scale-105"
                             onClick={saveCalculation}
                             disabled={Object.keys(selectedItems).length === 0}
                           >
@@ -788,6 +930,103 @@ const Calculator = () => {
                     </Card>
                   </div>
                 </div>
+              </TabsContent>
+
+              <TabsContent value="scrap" className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <XCircle className="h-5 w-5" />
+                      Списанные товары
+                    </CardTitle>
+                    <CardDescription>
+                      Отчет о списанных товарах с возможностью скачивания в Excel
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {scrappedItems.length === 0 ? (
+                      <div className="text-center py-12 text-muted-foreground">
+                        <XCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                        <p>Нет списанных товаров</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="rounded-lg border">
+                          <table className="w-full">
+                            <thead>
+                              <tr className="border-b bg-muted/50">
+                                <th className="p-3 text-left font-medium">Товар</th>
+                                <th className="p-3 text-left font-medium">Когда списано</th>
+                                <th className="p-3 text-left font-medium">Откуда</th>
+                                <th className="p-3 text-right font-medium">Количество</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {scrappedItems.map((item, index) => (
+                                <tr key={index} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                                  <td className="p-3">{item.componentName}</td>
+                                  <td className="p-3 text-muted-foreground">
+                                    {new Date(item.scrappedAt).toLocaleString('ru-RU')}
+                                  </td>
+                                  <td className="p-3 text-muted-foreground">{item.location}</td>
+                                  <td className="p-3 text-right font-medium">{item.quantity} шт.</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            className="flex-1 transition-all duration-200 hover:scale-105"
+                            onClick={async () => {
+                              try {
+                                const { clearScrappedItems } = await import("@/lib/db");
+                                await clearScrappedItems();
+                                setScrappedItems([]);
+                              } catch (error) {
+                                console.error('Error clearing scrapped items:', error);
+                              }
+                            }}
+                          >
+                            <XCircle className="h-4 w-4 mr-2" />
+                            Очистить список
+                          </Button>
+                          <Button
+                            className="flex-1 transition-all duration-200 hover:scale-105"
+                            onClick={() => {
+                              // Download Excel report
+                              const excelData = scrappedItems.map(item => ({
+                                'Товар': item.componentName,
+                                'Когда списано': new Date(item.scrappedAt).toLocaleString('ru-RU'),
+                                'Откуда': item.location,
+                                'Количество (шт.)': item.quantity
+                              }));
+                              
+                              const wb = XLSX.utils.book_new();
+                              const ws = XLSX.utils.json_to_sheet(excelData);
+                              
+                              ws['!cols'] = [
+                                { wch: 30 },
+                                { wch: 20 },
+                                { wch: 20 },
+                                { wch: 15 }
+                              ];
+                              
+                              XLSX.utils.book_append_sheet(wb, ws, 'Списания');
+                              const fileName = `scrapped_items_${new Date().toISOString().split('T')[0]}.xlsx`;
+                              XLSX.writeFile(wb, fileName);
+                            }}
+                          >
+                            <FileText className="h-4 w-4 mr-2" />
+                            Скачать отчет Excel
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
               </TabsContent>
 
               <TabsContent value="analytics" className="space-y-6">
@@ -804,7 +1043,13 @@ const Calculator = () => {
                           {warehouseAnalytics.lowStockItems.map(item => (
                             <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg">
                               <div>
-                                <div className="font-medium">{item.name}</div>
+                                <ItemLink 
+                                  itemId={item.id} 
+                                  itemName={item.name} 
+                                  variant="ghost" 
+                                  size="sm"
+                                  className="font-medium"
+                                />
                                 <div className="text-sm text-muted-foreground">
                                   {item.category} • {item.location}
                                 </div>
@@ -821,20 +1066,73 @@ const Calculator = () => {
                       <Separator />
 
                       <div>
-                        <h4 className="font-medium mb-3">Отсутствующие компоненты</h4>
-                        <div className="space-y-2">
-                          {warehouseAnalytics.outOfStockItems.map(item => (
-                            <div key={item.id} className="flex items-center justify-between p-3 border rounded-lg bg-red-50">
-                              <div>
-                                <div className="font-medium">{item.name}</div>
-                                <div className="text-sm text-muted-foreground">
-                                  {item.category} • {item.location}
-                                </div>
-                              </div>
-                              <Badge variant="destructive">Нет в наличии</Badge>
-                            </div>
-                          ))}
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="font-medium">Отсутствующие компоненты</h4>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="transition-all duration-200 hover:scale-105"
+                              onClick={() => {
+                                // Export to Excel
+                                const excelData = warehouseAnalytics.outOfStockItems.map((item: any) => ({
+                                  'Компонент': item.name,
+                                  'Категория': item.category,
+                                  'Расположение': item.location,
+                                  'Мин. запас': item.minStock ?? 0,
+                                  'Текущее кол-во (шт.)': item.quantity
+                                }));
+                                const wb = XLSX.utils.book_new();
+                                const ws = XLSX.utils.json_to_sheet(excelData);
+                                ws['!cols'] = [
+                                  { wch: 30 },
+                                  { wch: 20 },
+                                  { wch: 20 },
+                                  { wch: 12 },
+                                  { wch: 18 }
+                                ];
+                                XLSX.utils.book_append_sheet(wb, ws, 'Отсутствующие');
+                                const fileName = `out_of_stock_${new Date().toISOString().split('T')[0]}.xlsx`;
+                                XLSX.writeFile(wb, fileName);
+                              }}
+                            >
+                              <FileText className="h-4 w-4 mr-2" />
+                              Экспорт Excel
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="transition-all duration-200 hover:scale-105"
+                              onClick={() => setShowDetailedAnalytics(prev => !prev)}
+                            >
+                              {showDetailedAnalytics ? 'Свернуть' : 'Развернуть'}
+                            </Button>
+                          </div>
                         </div>
+                        {showDetailedAnalytics && (
+                          <div className="space-y-2 max-h-64 overflow-y-auto">
+                            {warehouseAnalytics.outOfStockItems.map((item: any) => (
+                              <div
+                                key={item.id}
+                                className="flex items-center justify-between p-3 border rounded-lg bg-red-50 border-red-200 text-red-900"
+                              >
+                                <div>
+                                  <ItemLink 
+                                    itemId={item.id} 
+                                    itemName={item.name} 
+                                    variant="ghost" 
+                                    size="sm"
+                                    className="font-medium"
+                                  />
+                                  <div className="text-sm text-red-700/90">
+                                    {item.category} • {item.location}
+                                  </div>
+                                </div>
+                                <Badge variant="destructive" className="shrink-0">Нет в наличии</Badge>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -883,202 +1181,212 @@ const Calculator = () => {
                   </Card>
                 </div>
 
-                                 <Card>
-                   <CardHeader>
-                     <CardTitle>Рекомендации по закупкам</CardTitle>
-                     <CardDescription>Автоматические рекомендации на основе анализа</CardDescription>
-                   </CardHeader>
-                   <CardContent>
-                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                       <div className="p-4 border rounded-lg">
-                         <div className="flex items-center gap-2 mb-2">
-                           <AlertTriangle className="h-5 w-5 text-yellow-500" />
-                           <h4 className="font-medium">Срочные закупки</h4>
-                         </div>
-                         <p className="text-sm text-muted-foreground mb-3">
-                           Компоненты, которые нужно закупить в первую очередь
-                         </p>
-                         <Button size="sm" variant="outline" className="w-full">
-                           <Download className="h-4 w-4 mr-2" />
-                           Скачать список
-                         </Button>
-                       </div>
 
-                       <div className="p-4 border rounded-lg">
-                         <div className="flex items-center gap-2 mb-2">
-                           <Target className="h-5 w-5 text-blue-500" />
-                           <h4 className="font-medium">Планирование</h4>
+                 {/* Planning Statistics Section */}
+                 {showPlanningStats && (
+                   <Card>
+                     <CardHeader>
+                       <CardTitle>Статистика планирования</CardTitle>
+                       <CardDescription>Детальная статистика по использованию компонентов и сборке конфигураций</CardDescription>
+                     </CardHeader>
+                     <CardContent>
+                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                         <div className="text-center p-4 bg-blue-50 rounded-lg">
+                           <TrendingDown className="h-8 w-8 text-blue-600 mx-auto mb-2" />
+                           <div className="text-2xl font-bold text-blue-600">{warehouseStats.totalScrapped || 0}</div>
+                           <div className="text-sm text-muted-foreground">Списано компонентов</div>
                          </div>
-                         <p className="text-sm text-muted-foreground mb-3">
-                           Рекомендации по планированию закупок на месяц
-                         </p>
-                         <Button size="sm" variant="outline" className="w-full">
-                           <BarChart3 className="h-4 w-4 mr-2" />
-                           Показать план
+                         <div className="text-center p-4 bg-green-50 rounded-lg">
+                           <TrendingUp className="h-8 w-8 text-green-600 mx-auto mb-2" />
+                           <div className="text-2xl font-bold text-green-600">{warehouseStats.totalBuilds || 0}</div>
+                           <div className="text-sm text-muted-foreground">Собрано конфигураций</div>
+                         </div>
+                         <div className="text-center p-4 bg-purple-50 rounded-lg">
+                           <Package className="h-8 w-8 text-purple-600 mx-auto mb-2" />
+                           <div className="text-2xl font-bold text-purple-600">{warehouseStats.totalComponents || 0}</div>
+                           <div className="text-sm text-muted-foreground">Всего компонентов</div>
+                         </div>
+                         <div className="text-center p-4 bg-orange-50 rounded-lg">
+                           <Banknote className="h-8 w-8 text-orange-600 mx-auto mb-2" />
+                           <div className="text-2xl font-bold text-orange-600">{formatCurrency(warehouseStats.totalValue || 0)}</div>
+                           <div className="text-sm text-muted-foreground">Общая стоимость</div>
+                         </div>
+                       </div>
+                       
+                       <div className="flex justify-end gap-2 mb-4">
+                         <Button 
+                           size="sm" 
+                           variant="outline" 
+                           onClick={downloadWarehouseReport}
+                           className="transition-all duration-200 hover:scale-105"
+                         >
+                           <FileText className="h-4 w-4 mr-2" />
+                           Скачать отчет Excel
                          </Button>
                        </div>
-
-                       <div className="p-4 border rounded-lg">
-                         <div className="flex items-center gap-2 mb-2">
-                           <Zap className="h-5 w-5 text-green-500" />
-                           <h4 className="font-medium">Оптимизация</h4>
-                         </div>
-                         <p className="text-sm text-muted-foreground mb-3">
-                           Предложения по оптимизации складских запасов
-                         </p>
-                         <Button size="sm" variant="outline" className="w-full">
-                           <Settings className="h-4 w-4 mr-2" />
-                           Настроить
-                         </Button>
-                       </div>
-                     </div>
-                   </CardContent>
-                 </Card>
+                     </CardContent>
+                   </Card>
+                 )}
 
                  {/* Enhanced Analytics Section */}
                  <Card>
                    <CardHeader>
-                     <CardTitle>Детальная аналитика склада</CardTitle>
-                     <CardDescription>Подробный анализ производительности и эффективности</CardDescription>
+                     <div className="flex items-center justify-between">
+                       <div>
+                         <CardTitle>Детальная аналитика склада</CardTitle>
+                         <CardDescription>Подробный анализ производительности и эффективности</CardDescription>
+                       </div>
+                       <Button
+                         variant="outline"
+                         size="sm"
+                         onClick={() => setShowDetailedAnalytics(!showDetailedAnalytics)}
+                       >
+                         {showDetailedAnalytics ? 'Свернуть' : 'Развернуть'}
+                       </Button>
+                     </div>
                    </CardHeader>
-                   <CardContent className="space-y-6">
-                     {/* Stock Turnover Analysis */}
-                     <div>
-                       <h4 className="font-medium mb-3">Оборачиваемость запасов</h4>
-                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                         <div className="text-center p-3 bg-blue-50 rounded-lg">
-                           <div className="text-lg font-bold text-blue-600">12.5</div>
-                           <div className="text-sm text-muted-foreground">Средняя оборачиваемость</div>
-                         </div>
-                         <div className="text-center p-3 bg-green-50 rounded-lg">
-                           <div className="text-lg font-bold text-green-600">85%</div>
-                           <div className="text-sm text-muted-foreground">Эффективность склада</div>
-                         </div>
-                         <div className="text-center p-3 bg-purple-50 rounded-lg">
-                           <div className="text-lg font-bold text-purple-600">3.2</div>
-                           <div className="text-sm text-muted-foreground">Дней до пополнения</div>
-                         </div>
-                         <div className="text-center p-3 bg-orange-50 rounded-lg">
-                           <div className="text-lg font-bold text-orange-600">92%</div>
-                           <div className="text-sm text-muted-foreground">Точность инвентаризации</div>
-                         </div>
-                       </div>
-                     </div>
-
-                     <Separator />
-
-                     {/* Category Performance */}
-                     <div>
-                       <h4 className="font-medium mb-3">Производительность по категориям</h4>
-                       <div className="space-y-3">
-                         {categories.map(category => {
-                           const categoryItems = mockComponents.filter(item => item.category === category);
-                           const totalValue = categoryItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-                           const avgStock = categoryItems.reduce((sum, item) => sum + item.quantity, 0) / categoryItems.length;
-                           
-                           return (
-                             <div key={category} className="flex items-center justify-between p-3 border rounded-lg">
-                               <div className="flex items-center gap-3">
-                                 <Badge variant="secondary">{category}</Badge>
-                                 <span className="text-sm text-muted-foreground">
-                                   {categoryItems.length} компонентов
-                                 </span>
-                               </div>
-                               <div className="flex items-center gap-4 text-sm">
-                                 <span>Стоимость: {totalValue.toLocaleString()}₽</span>
-                                 <span>Средний запас: {Math.round(avgStock)} шт.</span>
-                               </div>
-                             </div>
-                           );
-                         })}
-                       </div>
-                     </div>
-
-                     <Separator />
-
-                     {/* Configuration Efficiency */}
-                     <div>
-                       <h4 className="font-medium mb-3">Эффективность конфигураций</h4>
-                       <div className="space-y-3">
-                         {mockConfigurations.map(config => {
-                           const availability = calculateConfigurationAvailability(config);
-                           const efficiency = (availability.availableCount / availability.totalCount) * 100;
-                           
-                           return (
-                             <div key={config.id} className="flex items-center justify-between p-3 border rounded-lg">
-                               <div className="flex items-center gap-3">
-                                 <span className="font-medium">{config.name}</span>
-                                 {getPriorityBadge(config.priority)}
-                               </div>
-                               <div className="flex items-center gap-4">
-                                 <div className="text-center">
-                                   <div className="text-sm font-medium">{efficiency.toFixed(1)}%</div>
-                                   <div className="text-xs text-muted-foreground">Доступность</div>
-                                 </div>
-                                 <div className="text-center">
-                                   <div className="text-sm font-medium">{availability.maxPossibleBuilds}</div>
-                                   <div className="text-xs text-muted-foreground">Можно собрать</div>
-                                 </div>
-                                 <div className="text-center">
-                                   <div className="text-sm font-medium">{(config.totalValue * availability.maxPossibleBuilds).toLocaleString()}₽</div>
-                                   <div className="text-xs text-muted-foreground">Потенциальная выручка</div>
-                                 </div>
-                               </div>
-                             </div>
-                           );
-                         })}
-                       </div>
-                     </div>
-
-                     <Separator />
-
-                     {/* Predictive Analytics */}
-                     <div>
-                       <h4 className="font-medium mb-3">Прогнозная аналитика</h4>
-                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                         <div className="p-4 border rounded-lg">
-                           <h5 className="font-medium mb-2">Прогноз спроса</h5>
-                           <div className="space-y-2 text-sm">
-                             <div className="flex justify-between">
-                               <span>Следующие 7 дней:</span>
-                               <span className="font-medium">+15%</span>
-                             </div>
-                             <div className="flex justify-between">
-                               <span>Следующие 30 дней:</span>
-                               <span className="font-medium">+8%</span>
-                             </div>
-                             <div className="flex justify-between">
-                               <span>Следующие 90 дней:</span>
-                               <span className="font-medium">+22%</span>
-                             </div>
+                   {showDetailedAnalytics && (
+                     <CardContent className="space-y-6">
+                       {/* Stock Turnover Analysis */}
+                       <div>
+                         <h4 className="font-medium mb-3">Оборачиваемость запасов</h4>
+                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                           <div className="text-center p-3 bg-blue-50 rounded-lg">
+                             <div className="text-lg font-bold text-blue-600">12.5</div>
+                             <div className="text-sm text-muted-foreground">Средняя оборачиваемость</div>
                            </div>
-                         </div>
-                         <div className="p-4 border rounded-lg">
-                           <h5 className="font-medium mb-2">Рекомендации по запасам</h5>
-                           <div className="space-y-2 text-sm">
-                             <div className="flex justify-between">
-                               <span>Увеличить запасы:</span>
-                               <span className="font-medium text-green-600">CPU, RAM</span>
-                             </div>
-                             <div className="flex justify-between">
-                               <span>Снизить запасы:</span>
-                               <span className="font-medium text-red-600">Кабели</span>
-                             </div>
-                             <div className="flex justify-between">
-                               <span>Оптимизировать:</span>
-                               <span className="font-medium text-blue-600">Видеокарты</span>
-                             </div>
+                           <div className="text-center p-3 bg-green-50 rounded-lg">
+                             <div className="text-lg font-bold text-green-600">85%</div>
+                             <div className="text-sm text-muted-foreground">Эффективность склада</div>
+                           </div>
+                           <div className="text-center p-3 bg-purple-50 rounded-lg">
+                             <div className="text-lg font-bold text-purple-600">3.2</div>
+                             <div className="text-sm text-muted-foreground">Дней до пополнения</div>
+                           </div>
+                           <div className="text-center p-3 bg-orange-50 rounded-lg">
+                             <div className="text-lg font-bold text-orange-600">92%</div>
+                             <div className="text-sm text-muted-foreground">Точность инвентаризации</div>
                            </div>
                          </div>
                        </div>
-                     </div>
-                   </CardContent>
+
+                       <Separator />
+
+                       {/* Category Performance */}
+                       <div>
+                         <h4 className="font-medium mb-3">Производительность по категориям</h4>
+                         <div className="space-y-3">
+                           {categories.map(category => {
+                             const categoryItems = components.filter(item => item.category === category);
+                             const totalValue = categoryItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                             const avgStock = categoryItems.length > 0 ? categoryItems.reduce((sum, item) => sum + item.quantity, 0) / categoryItems.length : 0;
+                             
+                             return (
+                               <div key={category} className="flex items-center justify-between p-3 border rounded-lg">
+                                 <div className="flex items-center gap-3">
+                                   <Badge variant="secondary">{category}</Badge>
+                                   <span className="text-sm text-muted-foreground">
+                                     {categoryItems.length} компонентов
+                                   </span>
+                                 </div>
+                                 <div className="flex items-center gap-4 text-sm">
+                                   <span>Стоимость: {totalValue.toLocaleString()}₽</span>
+                                   <span>Средний запас: {Math.round(avgStock)} шт.</span>
+                                 </div>
+                               </div>
+                             );
+                           })}
+                         </div>
+                       </div>
+
+                       <Separator />
+
+                       {/* Configuration Efficiency */}
+                       <div>
+                         <h4 className="font-medium mb-3">Эффективность конфигураций</h4>
+                         <div className="space-y-3">
+                           {configurations.map(config => {
+                             const availability = calculateConfigurationAvailability(config);
+                             const efficiency = availability.totalCount > 0 ? (availability.availableCount / availability.totalCount) * 100 : 0;
+                             
+                             return (
+                               <div key={config.id} className="flex items-center justify-between p-3 border rounded-lg">
+                                 <div className="flex items-center gap-3">
+                                   <span className="font-medium">{config.name}</span>
+                                   {getPriorityBadge(config.priority)}
+                                 </div>
+                                 <div className="flex items-center gap-4">
+                                   <div className="text-center">
+                                     <div className="text-sm font-medium">{efficiency.toFixed(1)}%</div>
+                                     <div className="text-xs text-muted-foreground">Доступность</div>
+                                   </div>
+                                   <div className="text-center">
+                                     <div className="text-sm font-medium">{availability.maxPossibleBuilds}</div>
+                                     <div className="text-xs text-muted-foreground">Можно собрать</div>
+                                   </div>
+                                   <div className="text-center">
+                                     <div className="text-sm font-medium">{(config.totalValue * availability.maxPossibleBuilds).toLocaleString()}₽</div>
+                                     <div className="text-xs text-muted-foreground">Потенциальная выручка</div>
+                                   </div>
+                                 </div>
+                               </div>
+                             );
+                           })}
+                         </div>
+                       </div>
+
+                       <Separator />
+
+                       {/* Predictive Analytics */}
+                       <div>
+                         <h4 className="font-medium mb-3">Прогнозная аналитика</h4>
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                           <div className="p-4 border rounded-lg">
+                             <h5 className="font-medium mb-2">Прогноз спроса</h5>
+                             <div className="space-y-2 text-sm">
+                               <div className="flex justify-between">
+                                 <span>Следующие 7 дней:</span>
+                                 <span className="font-medium">+15%</span>
+                               </div>
+                               <div className="flex justify-between">
+                                 <span>Следующие 30 дней:</span>
+                                 <span className="font-medium">+8%</span>
+                               </div>
+                               <div className="flex justify-between">
+                                 <span>Следующие 90 дней:</span>
+                                 <span className="font-medium">+22%</span>
+                               </div>
+                             </div>
+                           </div>
+                           <div className="p-4 border rounded-lg">
+                             <h5 className="font-medium mb-2">Рекомендации по запасам</h5>
+                             <div className="space-y-2 text-sm">
+                               <div className="flex justify-between">
+                                 <span>Увеличить запасы:</span>
+                                 <span className="font-medium text-green-600">CPU, RAM</span>
+                               </div>
+                               <div className="flex justify-between">
+                                 <span>Снизить запасы:</span>
+                                 <span className="font-medium text-red-600">Кабели</span>
+                               </div>
+                               <div className="flex justify-between">
+                                 <span>Оптимизировать:</span>
+                                 <span className="font-medium text-blue-600">Видеокарты</span>
+                               </div>
+                             </div>
+                           </div>
+                         </div>
+                       </div>
+                     </CardContent>
+                   )}
                  </Card>
               </TabsContent>
+
             </Tabs>
           </main>
         </div>
       </div>
+
     </div>
   );
 };

@@ -1,14 +1,38 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Plus, Pencil, Calculator, Settings, FileText, Wrench, Home } from "lucide-react";
+import GlassmorphismWrapper from "@/components/theme/GlassmorphismWrapper";
+import SimpleCalculator from "@/components/calculator/SimpleCalculator";
+import { Plus, Pencil, Calculator, Settings, FileText, Wrench, Home, Hash } from "lucide-react";
+import { useApp } from "@/contexts/AppContext";
 
 export const Sidebar = () => {
+  const { navigateToAdd } = useApp();
   const [collapsed, setCollapsed] = useState(false);
+  const [isGlassmorphism, setIsGlassmorphism] = useState(false);
+  const [isSimpleCalculatorOpen, setIsSimpleCalculatorOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+
+  useEffect(() => {
+    const checkTheme = () => {
+      const isGlass = document.documentElement.classList.contains('glassmorphism-theme');
+      setIsGlassmorphism(isGlass);
+    };
+
+    checkTheme();
+    
+    // Слушаем изменения темы
+    const observer = new MutationObserver(checkTheme);
+    observer.observe(document.documentElement, { 
+      attributes: true, 
+      attributeFilter: ['class'] 
+    });
+
+    return () => observer.disconnect();
+  }, []);
 
   const Item = ({ 
     icon: Icon, 
@@ -43,21 +67,10 @@ export const Sidebar = () => {
   );
 
   const handleAddClick = () => {
-    if (location.pathname === "/") {
-      // If we're on the main page, trigger the add dialog
-      const event = new CustomEvent('openAddDialog');
-      window.dispatchEvent(event);
-    } else {
-      // If we're on another page, navigate to main page and then trigger add
-      navigate("/");
-      setTimeout(() => {
-        const event = new CustomEvent('openAddDialog');
-        window.dispatchEvent(event);
-      }, 100);
-    }
+    navigateToAdd();
   };
 
-  return (
+  const sidebarContent = (
     <aside className={cn("h-screen sticky top-0 p-3 border-r bg-background", collapsed ? "w-16" : "w-64")}
       aria-label="Левая панель навигации">
       <div className="flex items-center justify-between mb-4">
@@ -84,12 +97,31 @@ export const Sidebar = () => {
           onClick={() => navigate("/edit")} 
           isActive={location.pathname === "/edit"}
         />
-        <Item 
-          icon={Calculator} 
-          label="Калькулятор" 
-          onClick={() => navigate("/calculator")} 
-          isActive={location.pathname === "/calculator"}
-        />
+        <div className="relative">
+          <Item 
+            icon={Calculator} 
+            label="Статистика" 
+            onClick={() => navigate("/calculator")} 
+            isActive={location.pathname === "/calculator"}
+          />
+          {!collapsed && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="absolute -top-1 -right-1 w-6 h-6 bg-primary text-primary-foreground hover:bg-primary/90"
+                  onClick={() => setIsSimpleCalculatorOpen(true)}
+                >
+                  <Hash className="h-3 w-3" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                <p>Простой калькулятор</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
         <Item 
           icon={Wrench} 
           label="Конфигурации" 
@@ -110,6 +142,21 @@ export const Sidebar = () => {
         />
       </nav>
     </aside>
+  );
+
+  return (
+    <>
+      {isGlassmorphism ? (
+        <GlassmorphismWrapper variant="sidebar" className="h-screen sticky top-0">
+          {sidebarContent}
+        </GlassmorphismWrapper>
+      ) : sidebarContent}
+      
+      <SimpleCalculator 
+        isOpen={isSimpleCalculatorOpen} 
+        onClose={() => setIsSimpleCalculatorOpen(false)} 
+      />
+    </>
   );
 };
 

@@ -71,3 +71,9 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+
+npm run dev - веб-сервер разработки (обычно http://localhost:5173)
+npm run tauri dev - десктопное Tauri приложение
+npm run build - сборка для продакшена
+npm run tauri build - сборка десктопного приложения
+

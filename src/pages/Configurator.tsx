@@ -18,7 +18,7 @@ import {
   Copy, 
   Trash2, 
   Package, 
-  DollarSign, 
+  Banknote, 
   Calculator, 
   CheckCircle, 
   AlertTriangle, 
@@ -53,6 +53,7 @@ import {
 } from "lucide-react";
 import { useState, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { formatCurrency } from "@/lib/utils";
 
 // Enhanced component data with more details
 const enhancedComponents = [
@@ -713,8 +714,8 @@ const Configurator = () => {
                       <CardContent className="space-y-4">
                         <div className="grid grid-cols-2 gap-4">
                           <div className="text-center p-4 bg-primary/5 rounded-lg">
-                            <DollarSign className="h-8 w-8 text-primary mx-auto mb-2" />
-                            <div className="text-2xl font-bold">{customTotals.totalValue.toLocaleString()}₽</div>
+                            <Banknote className="h-8 w-8 text-primary mx-auto mb-2" />
+                            <div className="text-2xl font-bold">{formatCurrency(customTotals.totalValue)}</div>
                             <div className="text-sm text-muted-foreground">Общая стоимость</div>
                           </div>
                           <div className="text-center p-4 bg-primary/5 rounded-lg">

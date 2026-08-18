@@ -1,6 +1,6 @@
 import Sidebar from "@/components/layout/Sidebar";
 import TopBar from "@/components/layout/TopBar";
-import BackgroundGlow from "@/components/common/BackgroundGlow";
+import UniversalBackground from "@/components/UniversalBackground";
 import Seo from "@/components/seo/Seo";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,111 +13,206 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { FileText, Plus, Upload, Download, Search, Filter, Link, Calendar, User, Trash2, Eye, ExternalLink } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import { getDocuments, addDocument, deleteDocument as dbDeleteDocument, updateDocumentLinks } from "@/lib/db";
+import { useApp } from "@/contexts/AppContext";
+import { useSearchParams } from "react-router-dom";
+import { InventoryItem } from "@/components/inventory/InventoryTable";
+import { ItemLink } from "@/components/common/ItemLink";
 
-// Mock data for documents
-const mockComponents = [
-  { id: 1, name: "SSD 1TB", category: "Накопители" },
-  { id: 2, name: "DDR4 16GB", category: "Память" },
-  { id: 3, name: "CPU Ryzen 7", category: "Процессоры" },
-  { id: 4, name: "SATA кабель", category: "Кабели" },
-  { id: 5, name: "Материнская плата", category: "Платы" },
-];
-
-const mockDocuments = [
-  {
-    id: 1,
-    name: "Техническая документация SSD 1TB",
-    type: "pdf",
-    size: "2.5 MB",
-    componentId: 1,
-    componentName: "SSD 1TB",
-    category: "Техническая документация",
-    uploadedBy: "Иван Петров",
-    uploadedAt: "2025-08-01",
-    description: "Полная техническая документация для SSD накопителя",
-    tags: ["техдокументация", "ssd", "накопители"],
-    url: "https://example.com/docs/ssd-manual.pdf",
-  },
-  {
-    id: 2,
-    name: "Инструкция по установке DDR4",
-    type: "pdf",
-    size: "1.8 MB",
-    componentId: 2,
-    componentName: "DDR4 16GB",
-    category: "Инструкция",
-    uploadedBy: "Мария Сидорова",
-    uploadedAt: "2025-08-03",
-    description: "Пошаговая инструкция по установке оперативной памяти",
-    tags: ["инструкция", "память", "установка"],
-    url: "https://example.com/docs/ddr4-install.pdf",
-  },
-  {
-    id: 3,
-    name: "Сертификат качества CPU Ryzen 7",
-    type: "pdf",
-    size: "0.5 MB",
-    componentId: 3,
-    componentName: "CPU Ryzen 7",
-    category: "Сертификат",
-    uploadedBy: "Алексей Козлов",
-    uploadedAt: "2025-08-05",
-    description: "Сертификат качества и соответствия",
-    tags: ["сертификат", "качество", "cpu"],
-    url: "https://example.com/docs/ryzen-cert.pdf",
-  },
-  {
-    id: 4,
-    name: "Схема подключения SATA кабелей",
-    type: "jpg",
-    size: "3.2 MB",
-    componentId: 4,
-    componentName: "SATA кабель",
-    category: "Схема",
-    uploadedBy: "Елена Волкова",
-    uploadedAt: "2025-08-07",
-    description: "Визуальная схема подключения SATA кабелей",
-    tags: ["схема", "подключение", "sata"],
-    url: "https://example.com/docs/sata-diagram.jpg",
-  },
-];
+// Empty arrays for clean start
+const mockComponents: any[] = [];
+const mockDocuments: any[] = [];
 
 const formSchema = z.object({
   name: z.string().min(1, "Название обязательно"),
   description: z.string().optional(),
   category: z.string().min(1, "Категория обязательна"),
-  componentId: z.string().min(1, "Компонент обязателен"),
+  // component selection управляется отдельно (множественный выбор)
   tags: z.string().optional(),
 });
 
 type FormData = z.infer<typeof formSchema>;
 
+type ComponentOption = { id: number; name: string; category: string };
+
 const Documents = () => {
+  // Hooks must be called at the top level
+  const context = useApp();
+  const items: InventoryItem[] = context?.items || [];
+  const refreshItems = context?.refreshItems;
+  
+  const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [componentFilter, setComponentFilter] = useState<string>("all");
   const [documents, setDocuments] = useState(mockDocuments);
+  
+  // Use items from context
+  const components: ComponentOption[] = useMemo(() => {
+    if (!Array.isArray(items)) {
+      return [];
+    }
+    return items.map(item => ({ id: item.id, name: item.name, category: item.category }));
+  }, [items]);
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<typeof mockDocuments[0] | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedComponentIds, setSelectedComponentIds] = useState<number[]>([]);
+  const [editLinksDoc, setEditLinksDoc] = useState<any | null>(null);
+  const [editSelectedComponentIds, setEditSelectedComponentIds] = useState<number[]>([]);
+  const [componentSearch, setComponentSearch] = useState("");
+  const [editComponentSearch, setEditComponentSearch] = useState("");
 
-  const categories = useMemo(() => Array.from(new Set(documents.map(doc => doc.category))), []);
-  const componentCategories = useMemo(() => Array.from(new Set(mockComponents.map(comp => comp.category))), []);
+  const filteredComponents = useMemo(() => {
+    const q = componentSearch.toLowerCase().trim();
+    if (!q) return components;
+    return components.filter(c => (c.name + " " + c.category).toLowerCase().includes(q));
+  }, [components, componentSearch]);
+
+  const editFilteredComponents = useMemo(() => {
+    const q = editComponentSearch.toLowerCase().trim();
+    if (!q) return components;
+    return components.filter(c => (c.name + " " + c.category).toLowerCase().includes(q));
+  }, [components, editComponentSearch]);
+
+  // Helpers
+  const getMimeFromExtension = (ext: string) => {
+    const e = ext.toLowerCase();
+    if (e === 'pdf') return 'application/pdf';
+    if (e === 'jpg' || e === 'jpeg') return 'image/jpeg';
+    if (e === 'png') return 'image/png';
+    if (e === 'txt') return 'text/plain;charset=utf-8';
+    if (e === 'doc') return 'application/msword';
+    if (e === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (e === 'xls') return 'application/vnd.ms-excel';
+    if (e === 'xlsx') return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    return 'application/octet-stream';
+  };
+
+  const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const res = (reader.result as string) || '';
+      const comma = res.indexOf(',');
+      resolve(comma >= 0 ? res.slice(comma + 1) : res);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  // Auto-filter by itemId from URL
+  useEffect(() => {
+    const itemIdParam = searchParams.get('itemId');
+    if (itemIdParam) {
+      setComponentFilter(itemIdParam);
+    }
+  }, [searchParams]);
+
+  // Load documents from DB
+  useEffect(() => {
+    let isMounted = true;
+    
+    const loadDocs = async () => {
+      try {
+        const rows: any[] = await getDocuments();
+        if (!isMounted) return;
+        
+        if (!Array.isArray(rows)) {
+          console.warn('⚠️ getDocuments returned non-array:', rows);
+          if (isMounted) setDocuments([]);
+          return;
+        }
+        
+        const mapped = rows.map((r: any) => {
+          try {
+            const ext = (r.type || '').toString();
+            const mime = getMimeFromExtension(ext);
+            const dataUrl = `data:${mime};base64,${r.dataBase64 || ''}`;
+            const componentIds: number[] = typeof r.componentIds === 'string' && r.componentIds
+              ? r.componentIds.split(',').map((id: string) => Number(id)).filter(Boolean)
+              : (r.legacyComponentId ? [Number(r.legacyComponentId)] : []);
+            const compNames = componentIds
+              .map((id) => {
+                const item = Array.isArray(items) ? items.find((c) => c.id === id) : null;
+                return item?.name;
+              })
+              .filter(Boolean)
+              .join(', ');
+            return {
+              id: r.id,
+              name: r.name || 'Без названия',
+              type: ext,
+              size: `${(Number(r.sizeBytes || 0) / (1024 * 1024)).toFixed(1)} MB`,
+              componentIds,
+              componentNames: compNames,
+              category: r.category || 'Без категории',
+              uploadedBy: r.uploadedBy || 'Пользователь',
+              uploadedAt: (r.uploadedAt || '').toString().split('T')[0],
+              description: r.description || '',
+              tags: typeof r.tags === 'string' ? r.tags.split(',').filter(Boolean) : (r.tags || []),
+              url: dataUrl,
+            };
+          } catch (itemError) {
+            console.error('❌ Error processing document item:', itemError, r);
+            return null;
+          }
+        }).filter(Boolean) as any[];
+        
+        if (isMounted) {
+          setDocuments(mapped);
+        }
+      } catch (error) {
+        console.error('❌ Error loading documents:', error);
+        if (isMounted) {
+          setDocuments([]);
+        }
+      }
+    };
+
+    // Only load if items are available (or if items array is empty, still try to load)
+    loadDocs();
+
+    const onDocsUpdated = () => {
+      if (isMounted) {
+        loadDocs();
+      }
+    };
+    
+    window.addEventListener('documentsUpdated', onDocsUpdated as any);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('documentsUpdated', onDocsUpdated as any);
+    };
+  }, [items]);
+
+  const categories = useMemo(() => Array.from(new Set(documents.map(doc => doc.category))), [documents]);
+  const componentCategories = useMemo(() => Array.from(new Set(components.map(comp => comp.category))), [components]);
 
   const filteredDocuments = useMemo(() => {
-    return documents.filter(doc => {
-      const matchSearch = doc.name.toLowerCase().includes(search.toLowerCase()) ||
-                         doc.description?.toLowerCase().includes(search.toLowerCase()) ||
-                         doc.tags.some(tag => tag.toLowerCase().includes(search.toLowerCase()));
-      const matchCategory = categoryFilter === "all" || doc.category === categoryFilter;
-      const matchComponent = componentFilter === "all" || doc.componentName.toLowerCase().includes(componentFilter.toLowerCase());
-      return matchSearch && matchCategory && matchComponent;
-    });
+    if (!Array.isArray(documents)) {
+      return [];
+    }
+    try {
+      return documents.filter(doc => {
+        if (!doc) return false;
+        const matchSearch = (doc.name || '').toLowerCase().includes(search.toLowerCase()) ||
+                           (doc.description || '').toLowerCase().includes(search.toLowerCase()) ||
+                           (Array.isArray(doc.tags) ? doc.tags : []).some((tag: string) => tag.toLowerCase().includes(search.toLowerCase()));
+        const matchCategory = categoryFilter === "all" || doc.category === categoryFilter;
+        const matchComponent = componentFilter === "all" || 
+          (Array.isArray(doc.componentIds) ? doc.componentIds : []).some((id: number) => id.toString() === componentFilter) ||
+          (doc.componentNames || '').toLowerCase().includes(componentFilter.toLowerCase());
+        return matchSearch && matchCategory && matchComponent;
+      });
+    } catch (error) {
+      console.error('❌ Error filtering documents:', error);
+      return [];
+    }
   }, [documents, search, categoryFilter, componentFilter]);
 
   const form = useForm<FormData>({
@@ -126,7 +221,6 @@ const Documents = () => {
       name: "",
       description: "",
       category: "",
-      componentId: "",
       tags: "",
     },
   });
@@ -138,32 +232,75 @@ const Documents = () => {
     }
   };
 
-  const handleUploadDocument = (data: FormData) => {
+  const handleUploadDocument = async (data: FormData) => {
     if (!selectedFile) return;
-
-    const newDocument = {
-      id: Math.max(...documents.map(d => d.id), 0) + 1,
-      name: data.name,
-      type: selectedFile.name.split('.').pop() || "unknown",
-      size: `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB`,
-      componentId: parseInt(data.componentId),
-      componentName: mockComponents.find(c => c.id === parseInt(data.componentId))?.name || "",
-      category: data.category,
-      uploadedBy: "Текущий пользователь",
-      uploadedAt: new Date().toISOString().split('T')[0],
-      description: data.description || "",
-      tags: data.tags ? data.tags.split(',').map(tag => tag.trim()) : [],
-      url: URL.createObjectURL(selectedFile), // Create a blob URL for the uploaded file
-    };
-
-    setDocuments(prev => [...prev, newDocument]);
-    setIsUploadDialogOpen(false);
-    setSelectedFile(null);
-    form.reset();
+    if (!selectedComponentIds.length) {
+      alert('Выберите одно или несколько изделий для привязки');
+      return;
+    }
+    try {
+      const ext = selectedFile.name.split('.').pop() || 'unknown';
+      const base64 = await fileToBase64(selectedFile);
+      await addDocument({
+        name: data.name,
+        type: ext,
+        sizeBytes: selectedFile.size,
+        componentIds: selectedComponentIds,
+        category: data.category,
+        description: data.description || '',
+        tags: data.tags ? data.tags.split(',').map(t => t.trim()) : [],
+        uploadedBy: 'Текущий пользователь',
+        dataBase64: base64,
+      });
+      
+      // Reload list
+      const rows: any[] = await getDocuments();
+      if (Array.isArray(rows)) {
+        const mapped = rows.map((r: any) => {
+          const componentIds: number[] = typeof r.componentIds === 'string' && r.componentIds 
+            ? r.componentIds.split(',').map((id: string) => Number(id)).filter(Boolean) 
+            : [];
+          const compNames = componentIds
+            .map((id) => {
+              const comp = Array.isArray(items) ? items.find(c => c.id === Number(id)) : null;
+              return comp?.name;
+            })
+            .filter(Boolean)
+            .join(', ');
+          return {
+            id: r.id,
+            name: r.name || 'Без названия',
+            type: r.type,
+            size: `${(Number(r.sizeBytes || 0) / (1024 * 1024)).toFixed(1)} MB`,
+            componentIds,
+            componentNames: compNames,
+            category: r.category || 'Без категории',
+            uploadedBy: r.uploadedBy || 'Пользователь',
+            uploadedAt: (r.uploadedAt || '').toString().split('T')[0],
+            description: r.description || '',
+            tags: typeof r.tags === 'string' ? r.tags.split(',').filter(Boolean) : (r.tags || []),
+            url: `data:${getMimeFromExtension(r.type)};base64,${r.dataBase64 || ''}`,
+          };
+        });
+        setDocuments(mapped);
+      }
+      
+      // Dispatch event to notify other components
+      window.dispatchEvent(new CustomEvent('documentsUpdated'));
+      
+      setIsUploadDialogOpen(false);
+      setSelectedFile(null);
+      setSelectedComponentIds([]);
+      form.reset();
+    } catch (error) {
+      console.error('❌ Error uploading document:', error);
+      alert('Ошибка при загрузке документа. Попробуйте еще раз.');
+    }
   };
 
-  const handleDeleteDocument = (id: number) => {
+  const handleDeleteDocument = async (id: number) => {
     if (confirm("Вы уверены, что хотите удалить этот документ?")) {
+      await dbDeleteDocument(id);
       setDocuments(prev => prev.filter(doc => doc.id !== id));
     }
   };
@@ -173,11 +310,10 @@ const Documents = () => {
     setIsViewDialogOpen(true);
   };
 
-  const handleDownloadDocument = (document: typeof mockDocuments[0]) => {
-    // Create a temporary link element to trigger download
+  const handleDownloadDocument = (doc: typeof mockDocuments[0]) => {
     const link = document.createElement('a');
-    link.href = document.url;
-    link.download = document.name;
+    link.href = doc.url;
+    link.download = doc.name;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -197,21 +333,34 @@ const Documents = () => {
       case 'xls':
       case 'xlsx':
         return '📊';
+      case 'txt':
+        return '📄';
       default:
         return '📎';
     }
   };
 
   const canPreview = (type: string) => {
-    return ['pdf', 'jpg', 'jpeg', 'png'].includes(type.toLowerCase());
+    return ['pdf', 'jpg', 'jpeg', 'png', 'txt'].includes(type.toLowerCase());
   };
 
   const summary = { 
     name: "Документы", 
-    quantity: filteredDocuments.length, 
+    quantity: Array.isArray(filteredDocuments) ? filteredDocuments.length : 0, 
     location: "База данных", 
     category: "Файлы" 
   };
+
+  // Early return if context is not available (shouldn't happen, but just in case)
+  if (!context) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-lg text-muted-foreground">Загрузка...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen relative">
@@ -222,7 +371,7 @@ const Documents = () => {
       />
 
       <div className="absolute inset-0 -z-10">
-        <BackgroundGlow />
+        <UniversalBackground />
       </div>
 
       <div className="grid grid-cols-[auto_1fr]">
@@ -274,7 +423,7 @@ const Documents = () => {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">Все компоненты</SelectItem>
-                        {mockComponents.map(comp => (
+                        {components.map(comp => (
                           <SelectItem key={comp.id} value={comp.name}>{comp.name}</SelectItem>
                         ))}
                       </SelectContent>
@@ -337,12 +486,20 @@ const Documents = () => {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div>
-                            <div className="font-medium">{doc.componentName}</div>
-                            <div className="text-sm text-muted-foreground">
-                              {mockComponents.find(c => c.id === doc.componentId)?.category}
-                            </div>
+                      <div className="space-y-1">
+                        {doc.componentIds && doc.componentIds.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {doc.componentIds.slice(0, 2).map((id: number) => (
+                              <ItemLink key={id} itemId={id} variant="outline" size="sm" />
+                            ))}
+                            {doc.componentIds.length > 2 && (
+                              <span className="text-xs text-muted-foreground">+{doc.componentIds.length - 2}</span>
+                            )}
                           </div>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">Не привязан</span>
+                        )}
+                      </div>
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary">{doc.category}</Badge>
@@ -371,6 +528,13 @@ const Documents = () => {
                               onClick={() => handleDownloadDocument(doc)}
                             >
                               <Download className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => { setEditLinksDoc(doc); setEditSelectedComponentIds(doc.componentIds || []); }}
+                            >
+                              <Link className="h-4 w-4" />
                             </Button>
                             <Button
                               size="sm"
@@ -408,7 +572,16 @@ const Documents = () => {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="font-medium">Компонент:</span> {selectedDocument.componentName}
+                  <span className="font-medium">Компоненты:</span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {selectedDocument.componentIds && selectedDocument.componentIds.length > 0 ? (
+                      selectedDocument.componentIds.map((id: number) => (
+                        <ItemLink key={id} itemId={id} variant="outline" size="sm" />
+                      ))
+                    ) : (
+                      <span className="text-muted-foreground">Не привязан</span>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <span className="font-medium">Категория:</span> {selectedDocument.category}
@@ -447,6 +620,12 @@ const Documents = () => {
                     <div className="text-center">
                       <FileText className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
                       <p className="text-muted-foreground">PDF документ</p>
+                      <p className="text-sm text-muted-foreground">Для просмотра нажмите "Скачать"</p>
+                    </div>
+                  ) : selectedDocument.type.toLowerCase() === 'txt' ? (
+                    <div className="text-center w-full">
+                      <FileText className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">Текстовый документ</p>
                       <p className="text-sm text-muted-foreground">Для просмотра нажмите "Скачать"</p>
                     </div>
                   ) : selectedDocument.type.toLowerCase().match(/jpg|jpeg|png/) ? (
@@ -489,12 +668,12 @@ const Documents = () => {
       </Dialog>
 
       {/* Диалог загрузки документа */}
-      <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
+      <Dialog open={isUploadDialogOpen} onOpenChange={(open)=>{ setIsUploadDialogOpen(open); if(!open){ setSelectedFile(null); setSelectedComponentIds([]); }}}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Загрузить документ</DialogTitle>
             <DialogDescription>
-              Прикрепите документ к компоненту склада
+              Прикрепите документ к одному или нескольким компонентам склада
             </DialogDescription>
           </DialogHeader>
           
@@ -505,7 +684,7 @@ const Documents = () => {
                 id="file"
                 type="file"
                 onChange={handleFileSelect}
-                accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.txt"
                 className="mt-1"
               />
               {selectedFile && (
@@ -548,22 +727,29 @@ const Documents = () => {
             </div>
 
             <div>
-              <Label htmlFor="componentId">Прикрепить к компоненту *</Label>
-              <Select value={form.watch("componentId")} onValueChange={(value) => form.setValue("componentId", value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите компонент" />
-                </SelectTrigger>
-                <SelectContent>
-                  {mockComponents.map(comp => (
-                    <SelectItem key={comp.id} value={comp.id.toString()}>
-                      {comp.name} ({comp.category})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {form.formState.errors.componentId && (
-                <p className="text-sm text-destructive">{form.formState.errors.componentId.message}</p>
-              )}
+              <Label>Прикрепить к изделиям *</Label>
+              <Input
+                placeholder="Поиск по названию или категории"
+                className="mb-2"
+                onChange={(e)=> setComponentSearch(e.target.value)}
+              />
+              <div className="grid sm:grid-cols-2 gap-2 max-h-56 overflow-auto p-2 rounded-md border">
+                {filteredComponents.map((comp) => {
+                  const checked = selectedComponentIds.includes(comp.id);
+                  return (
+                    <label key={comp.id} className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e)=>{
+                          setSelectedComponentIds(prev=> e.target.checked ? Array.from(new Set([...prev, comp.id])) : prev.filter(id=>id!==comp.id));
+                        }}
+                      />
+                      <span className="truncate">{comp.name} ({comp.category})</span>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
 
             <div>
@@ -603,6 +789,67 @@ const Documents = () => {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Диалог редактирования привязок */}
+      <Dialog open={!!editLinksDoc} onOpenChange={(open)=>{ if(!open){ setEditLinksDoc(null); } }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Изменить привязки документа</DialogTitle>
+            <DialogDescription>
+              Выберите изделия, к которым должен быть привязан документ
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            placeholder="Поиск по названию или категории"
+            className="mb-2"
+            onChange={(e)=> setEditComponentSearch(e.target.value)}
+          />
+          <div className="grid sm:grid-cols-2 gap-2 max-h-72 overflow-auto p-2 rounded-md border">
+            {editFilteredComponents.map((comp) => {
+              const checked = editSelectedComponentIds.includes(comp.id);
+              return (
+                <label key={comp.id} className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e)=>{
+                      setEditSelectedComponentIds(prev=> e.target.checked ? Array.from(new Set([...prev, comp.id])) : prev.filter(id=>id!==comp.id));
+                    }}
+                  />
+                  <span className="truncate">{comp.name} ({comp.category})</span>
+                </label>
+              );
+            })}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={()=> setEditLinksDoc(null)}>Отмена</Button>
+            <Button onClick={async ()=>{
+              if (!editLinksDoc) return;
+              await updateDocumentLinks(editLinksDoc.id, editSelectedComponentIds);
+              const rows: any[] = await getDocuments();
+              const mapped = rows.map((r: any) => ({
+                id: r.id,
+                name: r.name,
+                type: r.type,
+                size: `${(Number(r.sizeBytes) / (1024 * 1024)).toFixed(1)} MB`,
+                componentIds: typeof r.componentIds === 'string' && r.componentIds ? r.componentIds.split(',').map((id: string)=>Number(id)) : [],
+                componentNames: (typeof r.componentIds === 'string' ? r.componentIds.split(',').map((id: string)=>{
+                  const comp = items.find(c=>c.id===Number(id));
+                  return comp?.name;
+                }).filter(Boolean).join(', ') : ''),
+                category: r.category,
+                uploadedBy: r.uploadedBy || 'Пользователь',
+                uploadedAt: (r.uploadedAt || '').toString().split('T')[0],
+                description: r.description || '',
+                tags: typeof r.tags === 'string' ? r.tags.split(',').filter(Boolean) : (r.tags || []),
+                url: `data:${(r.type || '').toString()};base64,${r.dataBase64}`,
+              }));
+              setDocuments(mapped);
+              setEditLinksDoc(null);
+            }}>Сохранить</Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

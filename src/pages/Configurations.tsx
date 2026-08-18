@@ -1,6 +1,6 @@
 import Sidebar from "@/components/layout/Sidebar";
 import TopBar from "@/components/layout/TopBar";
-import BackgroundGlow from "@/components/common/BackgroundGlow";
+import UniversalBackground from "@/components/UniversalBackground";
 import Seo from "@/components/seo/Seo";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,68 +12,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Wrench, Plus, Save, Copy, Trash2, Package, DollarSign, Calculator, CheckCircle, AlertCircle, XCircle } from "lucide-react";
-import { useState, useMemo, useEffect } from "react";
+import { Wrench, Plus, Save, Copy, Trash2, Package, Banknote, Calculator, CheckCircle, AlertCircle, XCircle, PackageOpen, RotateCcw } from "lucide-react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { getConfigurations, getConfigurationComponents, createConfiguration, deleteConfiguration, getAssembledCounts, assembleConfiguration, disassembleConfiguration, writeOffConfiguration, updateConfiguration } from "@/lib/db";
+import { formatCurrency } from "@/lib/utils";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import { useApp } from "@/contexts/AppContext";
+import { useSearchParams } from "react-router-dom";
+import { ItemLink } from "@/components/common/ItemLink";
+import { toast } from "@/hooks/use-toast";
 
-// Mock data for configurations (fallback)
-const mockComponents = [
-  { id: 1, name: "SSD 1TB", quantity: 12, category: "Накопители", location: "Склад А-12", price: 150 },
-  { id: 2, name: "DDR4 16GB", quantity: 34, category: "Память", location: "Склад B-02", price: 80 },
-  { id: 3, name: "CPU Ryzen 7", quantity: 5, category: "Процессоры", location: "Склад А-03", price: 300 },
-  { id: 4, name: "SATA кабель", quantity: 120, category: "Кабели", location: "Склад C-01", price: 5 },
-  { id: 5, name: "Материнская плата", quantity: 8, category: "Платы", location: "Склад А-05", price: 200 },
-  { id: 6, name: "Блок питания 650W", quantity: 15, category: "Питание", location: "Склад B-08", price: 120 },
-];
-
-const mockConfigurations = [
-  {
-    id: 1,
-    name: "Игровой ПК",
-    description: "Конфигурация для игрового компьютера",
-    components: [
-      { componentId: 3, quantity: 1, name: "CPU Ryzen 7" },
-      { componentId: 5, quantity: 1, name: "Материнская плата" },
-      { componentId: 2, quantity: 2, name: "DDR4 16GB" },
-      { componentId: 1, quantity: 1, name: "SSD 1TB" },
-      { componentId: 6, quantity: 1, name: "Блок питания 650W" },
-    ],
-    totalValue: 1050,
-    totalItems: 6,
-    createdAt: "2025-08-01",
-  },
-  {
-    id: 2,
-    name: "Офисный ПК",
-    description: "Конфигурация для офисного компьютера",
-    components: [
-      { componentId: 3, quantity: 1, name: "CPU Ryzen 7" },
-      { componentId: 5, quantity: 1, name: "Материнская плата" },
-      { componentId: 2, quantity: 1, name: "DDR4 16GB" },
-      { componentId: 1, quantity: 1, name: "SSD 1TB" },
-    ],
-    totalValue: 730,
-    totalItems: 4,
-    createdAt: "2025-08-05",
-  },
-  {
-    id: 3,
-    name: "Серверная сборка",
-    description: "Конфигурация для сервера",
-    components: [
-      { componentId: 3, quantity: 2, name: "CPU Ryzen 7" },
-      { componentId: 5, quantity: 1, name: "Материнская плата" },
-      { componentId: 2, quantity: 4, name: "DDR4 16GB" },
-      { componentId: 1, quantity: 2, name: "SSD 1TB" },
-      { componentId: 6, quantity: 1, name: "Блок питания 650W" },
-    ],
-    totalValue: 1860,
-    totalItems: 10,
-    createdAt: "2025-08-10",
-  },
-];
+// Empty arrays for clean start
+const mockComponents: any[] = [];
+const mockConfigurations: any[] = [];
 
 const formSchema = z.object({
   name: z.string().min(1, "Название обязательно"),
@@ -83,27 +36,89 @@ const formSchema = z.object({
 type FormData = z.infer<typeof formSchema>;
 
 const Configurations = () => {
+  const { items, categories, refreshItems, reservedQuantities } = useApp();
+  const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [configurations, setConfigurations] = useState(mockConfigurations);
+  const [assembledCounts, setAssembledCounts] = useState<Record<number, number>>({});
   const [selectedConfiguration, setSelectedConfiguration] = useState<typeof mockConfigurations[0] | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedComponents, setSelectedComponents] = useState<{[key: number]: number}>({});
+  const [componentSearch, setComponentSearch] = useState("");
+  const [componentCategoryFilter, setComponentCategoryFilter] = useState<string>("all");
+  const [disassembleQty, setDisassembleQty] = useState(1);
+  const [writeOffQty, setWriteOffQty] = useState(1);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [isAssembleDialogOpen, setIsAssembleDialogOpen] = useState(false);
+  const [assembleQuantity, setAssembleQuantity] = useState(1);
+  const [assembleCategory, setAssembleCategory] = useState("");
+  const [assembleLocation, setAssembleLocation] = useState("");
 
-  const [components, setComponents] = useState(mockComponents);
-  const categories = useMemo(() => Array.from(new Set(components.map(item => item.category))), [components]);
+  // Use items from context
+  const components = items;
+
+  // Auto-select configuration from URL
   useEffect(() => {
-    (async () => {
-      try {
-        const { getComponents } = await import("@/lib/db");
-        const rows = await getComponents();
-        if (rows && Array.isArray(rows) && rows.length > 0) {
-          setComponents(rows as any);
-        }
-      } catch {}
-    })();
-  }, []);
+    const configIdParam = searchParams.get('configId');
+    if (configIdParam) {
+      const configId = parseInt(configIdParam);
+      const config = configurations.find(c => c.id === configId);
+      if (config) {
+        setSelectedConfiguration(config);
+        setIsViewDialogOpen(true);
+      }
+    }
+  }, [searchParams, configurations]);
+
+  // Load configurations and assembled counts
+  const loadConfigurations = useCallback(async () => {
+    try {
+      const [cfgRows, counts] = await Promise.all([
+        getConfigurations(),
+        getAssembledCounts().catch(() => []),
+      ]);
+      const countMap: Record<number, number> = {};
+      (counts || []).forEach((r: { configurationId: number; quantity: number }) => {
+        countMap[r.configurationId] = r.quantity;
+      });
+      setAssembledCounts(countMap);
+
+      if (cfgRows && Array.isArray(cfgRows) && cfgRows.length > 0) {
+        const cfgWithComponents = await Promise.all(
+          (cfgRows as any[]).map(async (cfg: any) => {
+            const cc = await getConfigurationComponents(cfg.id);
+            const enriched = (cc as any[]).map((row: any) => ({
+              componentId: row.componentId,
+              quantity: row.quantity,
+              name: items.find((c) => c.id === row.componentId)?.name || "",
+            }));
+            return { ...cfg, components: enriched };
+          })
+        );
+        setConfigurations(cfgWithComponents as any);
+      } else {
+        setConfigurations(mockConfigurations as any);
+      }
+    } catch (error) {
+      console.error('Error loading configurations:', error);
+      setConfigurations(mockConfigurations as any);
+    }
+  }, [items]);
+
+  useEffect(() => {
+    loadConfigurations();
+    
+    const handleConfigurationsUpdated = () => {
+      loadConfigurations();
+    };
+    
+    window.addEventListener('configurationsUpdated', handleConfigurationsUpdated);
+    return () => {
+      window.removeEventListener('configurationsUpdated', handleConfigurationsUpdated);
+    };
+  }, [loadConfigurations]);
 
   const filteredComponents = useMemo(() => {
     return components.filter(item => {
@@ -112,6 +127,14 @@ const Configurations = () => {
       return matchSearch && matchCategory;
     });
   }, [search, categoryFilter]);
+
+  const filteredComponentsForCreation = useMemo(() => {
+    return components.filter(item => {
+      const matchSearch = item.name.toLowerCase().includes(componentSearch.toLowerCase());
+      const matchCategory = componentCategoryFilter === "all" || item.category === componentCategoryFilter;
+      return matchSearch && matchCategory;
+    });
+  }, [componentSearch, componentCategoryFilter, components]);
 
   const [availabilityFilter, setAvailabilityFilter] = useState<'all' | AvailabilityStatus>("all");
   const [sortBy, setSortBy] = useState<'name' | 'value' | 'canBuild' | 'date'>("canBuild");
@@ -154,11 +177,10 @@ const Configurations = () => {
     const availability: AvailabilityItem[] = config.components.map(comp => {
       const stockComponent = components.find(c => c.id === comp.componentId);
       if (!stockComponent) return { ...comp, available: 0, required: comp.quantity, status: 'missing' as const, stockComponent: null } as AvailabilityItem;
-      
-      const available = stockComponent.quantity;
+      const reserved = reservedQuantities[comp.componentId] ?? 0;
+      const available = Math.max(0, stockComponent.quantity - reserved);
       const required = comp.quantity;
       const status: AvailabilityStatus = available >= required ? 'available' : available > 0 ? 'partial' : 'unavailable';
-      
       return { ...comp, available, required, status, stockComponent } as AvailabilityItem;
     });
 
@@ -200,35 +222,47 @@ const Configurations = () => {
     }
   };
 
-  const handleCreateConfiguration = (data: FormData) => {
+  const handleCreateConfiguration = async (data: FormData) => {
     const { totalValue, totalItems } = calculateTotals(selectedComponents);
-    
-    const newConfiguration = {
-      id: Math.max(...configurations.map(c => c.id), 0) + 1,
-      name: data.name,
-      description: data.description || "",
-      components: Object.entries(selectedComponents).map(([componentId, quantity]) => {
-        const component = mockComponents.find(c => c.id === parseInt(componentId));
-        return {
-          componentId: parseInt(componentId),
-          quantity,
-          name: component?.name || "",
-        };
-      }),
-      totalValue,
-      totalItems,
-      createdAt: new Date().toISOString().split('T')[0],
-    };
-    
-    setConfigurations(prev => [...prev, newConfiguration]);
+    const componentsPayload = Object.entries(selectedComponents).map(([componentId, quantity]) => ({
+      componentId: parseInt(componentId as any),
+      quantity: quantity as number,
+    }));
+
+    try {
+      await createConfiguration({
+        name: data.name,
+        description: data.description || "",
+        components: componentsPayload,
+        totalValue,
+        totalItems,
+      });
+
+      // Reload configurations
+      await loadConfigurations();
+      await refreshItems();
+    } catch {}
+
     setIsCreateDialogOpen(false);
     setSelectedComponents({});
+    setComponentSearch("");
+    setComponentCategoryFilter("all");
     form.reset();
   };
 
-  const handleDeleteConfiguration = (id: number) => {
-    if (confirm("Вы уверены, что хотите удалить эту конфигурацию?")) {
-      setConfigurations(prev => prev.filter(config => config.id !== id));
+  const handleDeleteConfiguration = async (id: number) => {
+    if (!confirm("Вы уверены, что хотите удалить эту конфигурацию?")) return;
+    try {
+      await deleteConfiguration(id);
+      await loadConfigurations();
+      window.dispatchEvent(new CustomEvent('configurationsUpdated'));
+    } catch (error) {
+      console.error('Error deleting configuration:', error);
+      toast({
+        title: "Ошибка",
+        description: "Не удалось удалить конфигурацию",
+        variant: "destructive",
+      });
     }
   };
 
@@ -250,7 +284,7 @@ const Configurations = () => {
       partial: stats.filter(s => s.anyAvailable && !s.allAvailable).length,
       unavailable: stats.filter(s => s.noneAvailable).length,
     };
-  }, [configurations]);
+  }, [configurations, components]);
 
   const getMaxBuilds = (config: typeof mockConfigurations[0]) => {
     const availability = checkConfigurationAvailability(config);
@@ -308,7 +342,7 @@ const Configurations = () => {
       />
 
       <div className="absolute inset-0 -z-10">
-        <BackgroundGlow />
+        <UniversalBackground />
       </div>
 
       <div className="grid grid-cols-[auto_1fr]">
@@ -401,14 +435,20 @@ const Configurations = () => {
                           {config.description && (
                             <p className="text-sm text-muted-foreground mb-2">{config.description}</p>
                           )}
-                          <div className="flex items-center gap-4 text-sm">
+                          <div className="flex items-center gap-4 text-sm flex-wrap">
+                            {(assembledCounts[config.id] ?? 0) > 0 && (
+                              <span className="flex items-center gap-1 font-medium text-primary">
+                                <Package className="h-4 w-4" />
+                                Собрано: {assembledCounts[config.id]}
+                              </span>
+                            )}
                             <span className="flex items-center gap-1">
                               <Package className="h-4 w-4" />
                               {config.totalItems} компонентов
                             </span>
                             <span className="flex items-center gap-1">
-                              <DollarSign className="h-4 w-4" />
-                              {config.totalValue.toLocaleString()}₽
+                              <Banknote className="h-4 w-4" />
+                              {formatCurrency(config.totalValue)}
                             </span>
                             <span className="text-muted-foreground">{config.createdAt}</span>
                             <span className="ml-auto flex items-center gap-1">
@@ -440,9 +480,9 @@ const Configurations = () => {
                       <div className="text-sm text-muted-foreground">Всего конфигураций</div>
                     </div>
                     <div className="text-center p-4 bg-primary/5 rounded-lg">
-                      <DollarSign className="h-8 w-8 text-primary mx-auto mb-2" />
+                      <Banknote className="h-8 w-8 text-primary mx-auto mb-2" />
                       <div className="text-2xl font-bold">
-                        {configurations.reduce((sum, config) => sum + config.totalValue, 0).toLocaleString()}₽
+                        {formatCurrency(configurations.reduce((sum, config) => sum + config.totalValue, 0))}
                       </div>
                       <div className="text-sm text-muted-foreground">Общая стоимость</div>
                     </div>
@@ -482,7 +522,7 @@ const Configurations = () => {
                   <div>
                     <h4 className="font-medium mb-3">Популярные компоненты</h4>
                     <div className="space-y-2">
-                      {mockComponents.slice(0, 5).map(component => (
+                      {components.slice(0, 5).map(component => (
                         <div key={component.id} className="flex justify-between items-center text-sm">
                           <span>{component.name}</span>
                           <Badge variant="secondary">{component.quantity} шт.</Badge>
@@ -532,20 +572,47 @@ const Configurations = () => {
 
             <div>
               <Label>Выбор компонентов</Label>
+              
+              {/* Фильтры для компонентов */}
+              <div className="mt-2 mb-4 space-y-2">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Поиск компонентов..."
+                    value={componentSearch}
+                    onChange={(e) => setComponentSearch(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Select value={componentCategoryFilter} onValueChange={setComponentCategoryFilter}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="Категория" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Все категории</SelectItem>
+                      {categories.map(category => (
+                        <SelectItem key={category} value={category}>{category}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
               <div className="mt-2 space-y-2 max-h-64 overflow-y-auto">
-                {filteredComponents.map(component => (
+                {filteredComponentsForCreation.map(component => {
+                  const reserved = reservedQuantities[component.id] ?? 0;
+                  const available = Math.max(0, component.quantity - reserved);
+                  return (
                   <div key={component.id} className="flex items-center justify-between p-3 border rounded-lg">
                     <div className="flex-1">
                       <div className="font-medium">{component.name}</div>
                       <div className="text-sm text-muted-foreground">
-                        {component.category} • {component.price}₽/шт. • В наличии: {component.quantity} шт.
+                        {component.category} • {component.price}₽/шт. • Доступно: {available} шт.{reserved > 0 && ` (в конфиг. ${reserved})`}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Input
                         type="number"
                         min="0"
-                        max={component.quantity}
+                        max={available}
                         value={selectedComponents[component.id] || ""}
                         onChange={(e) => updateComponentQuantity(component.id, parseInt(e.target.value) || 0)}
                         placeholder="0"
@@ -560,7 +627,8 @@ const Configurations = () => {
                       </Button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -601,7 +669,7 @@ const Configurations = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Диалог просмотра конфигурации */}
+      {/* Диалог просмотра конфигурации — карточка изделия с составом, сборка/разборка/списание */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -617,28 +685,34 @@ const Configurations = () => {
                 <div className="text-center p-4 bg-primary/5 rounded-lg">
                   <Package className="h-8 w-8 text-primary mx-auto mb-2" />
                   <div className="text-2xl font-bold">{selectedConfiguration.totalItems}</div>
-                  <div className="text-sm text-muted-foreground">Компонентов</div>
+                  <div className="text-sm text-muted-foreground">Компонентов в составе</div>
                 </div>
                 <div className="text-center p-4 bg-primary/5 rounded-lg">
-                  <DollarSign className="h-8 w-8 text-primary mx-auto mb-2" />
-                  <div className="text-2xl font-bold">{selectedConfiguration.totalValue.toLocaleString()}₽</div>
+                  <Banknote className="h-8 w-8 text-primary mx-auto mb-2" />
+                  <div className="text-2xl font-bold">{formatCurrency(selectedConfiguration.totalValue)}</div>
                   <div className="text-sm text-muted-foreground">Общая стоимость</div>
                 </div>
               </div>
 
+              <div className="p-4 border rounded-lg bg-muted/30">
+                <h4 className="font-medium mb-2">Собрано единиц</h4>
+                <div className="text-2xl font-bold text-primary">{assembledCounts[selectedConfiguration.id] ?? 0}</div>
+                <p className="text-xs text-muted-foreground mt-1">Компоненты этих единиц зарезервированы и не отображаются как свободные на складе.</p>
+              </div>
+
               <div>
-                <h4 className="font-medium mb-3">Компоненты и доступность</h4>
+                <h4 className="font-medium mb-3">Состав конфигурации</h4>
                 <div className="space-y-2">
                   {checkConfigurationAvailability(selectedConfiguration).items.map((item, index) => (
                     <div key={index} className="flex justify-between items-center p-2 border rounded">
                       <div className="flex items-center gap-2">
                         {getAvailabilityIcon(item.status)}
-                        <span>{item.name}</span>
+                        <ItemLink itemId={item.componentId || 0} itemName={item.name} variant="ghost" size="sm" />
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge variant="secondary">{item.required} шт.</Badge>
                         <span className="text-sm text-muted-foreground">
-                          {item.available}/{item.required}
+                          доступно {item.available}/{item.required}
                         </span>
                       </div>
                     </div>
@@ -646,8 +720,170 @@ const Configurations = () => {
                 </div>
               </div>
 
+              <Separator />
+
+              <div className="flex flex-wrap gap-4">
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="default"
+                    disabled={actionLoading || getMaxBuilds(selectedConfiguration) < 1}
+                    onClick={() => {
+                      setAssembleQuantity(1);
+                      setAssembleCategory(selectedConfiguration.category?.trim() || "");
+                      setAssembleLocation(selectedConfiguration.location?.trim() || "");
+                      setIsAssembleDialogOpen(true);
+                    }}
+                  >
+                    <Package className="h-4 w-4 mr-1" />
+                    Собрать
+                  </Button>
+                </div>
+                {(assembledCounts[selectedConfiguration.id] ?? 0) > 0 && (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={assembledCounts[selectedConfiguration.id] ?? 0}
+                        value={disassembleQty}
+                        onChange={(e) => setDisassembleQty(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-16"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={actionLoading}
+                        onClick={async () => {
+                          setActionLoading(true);
+                          const res = await disassembleConfiguration(selectedConfiguration.id, disassembleQty);
+                          setActionLoading(false);
+                          if (res.success) {
+                            await loadConfigurations();
+                            refreshItems();
+                            toast({ title: `Разобрано ${disassembleQty} шт.`, description: "Компоненты возвращены на склад" });
+                            setDisassembleQty(1);
+                          } else {
+                            toast({ title: "Ошибка", description: res.error, variant: "destructive" });
+                          }
+                        }}
+                      >
+                        <RotateCcw className="h-4 w-4 mr-1" />
+                        Разобрать
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={assembledCounts[selectedConfiguration.id] ?? 0}
+                        value={writeOffQty}
+                        onChange={(e) => setWriteOffQty(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-16"
+                      />
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={actionLoading}
+                        onClick={async () => {
+                          if (!confirm(`Списать ${writeOffQty} единиц конфигурации? Компоненты будут списаны со склада.`)) return;
+                          setActionLoading(true);
+                          const res = await writeOffConfiguration(selectedConfiguration.id, writeOffQty);
+                          setActionLoading(false);
+                          if (res.success) {
+                            await loadConfigurations();
+                            refreshItems();
+                            toast({ title: `Списано ${writeOffQty} шт.`, description: "Компоненты списаны со склада", variant: "destructive" });
+                            setWriteOffQty(1);
+                          } else {
+                            toast({ title: "Ошибка", description: res.error, variant: "destructive" });
+                          }
+                        }}
+                      >
+                        <PackageOpen className="h-4 w-4 mr-1" />
+                        Списать
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+
               <div className="text-sm text-muted-foreground">
                 Создано: {selectedConfiguration.createdAt}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Диалог сборки: количество, категория, расположение */}
+      <Dialog open={isAssembleDialogOpen} onOpenChange={setIsAssembleDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Сборка конфигурации</DialogTitle>
+            <DialogDescription>
+              Укажите количество, категорию и расположение для отображения на складе
+            </DialogDescription>
+          </DialogHeader>
+          {selectedConfiguration && (
+            <div className="space-y-4 py-2">
+              <div>
+                <Label>Количество (макс. {getMaxBuilds(selectedConfiguration)})</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={getMaxBuilds(selectedConfiguration)}
+                  value={assembleQuantity}
+                  onChange={(e) => setAssembleQuantity(Math.max(1, Math.min(getMaxBuilds(selectedConfiguration), parseInt(e.target.value) || 1)))}
+                />
+              </div>
+              <div>
+                <Label>Категория *</Label>
+                <Input
+                  placeholder="Например: Сборки, Готовые изделия"
+                  value={assembleCategory}
+                  onChange={(e) => setAssembleCategory(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Расположение *</Label>
+                <Input
+                  placeholder="Например: Склад А-1"
+                  value={assembleLocation}
+                  onChange={(e) => setAssembleLocation(e.target.value)}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setIsAssembleDialogOpen(false)}>Отмена</Button>
+                <Button
+                  disabled={actionLoading || !assembleCategory.trim() || !assembleLocation.trim() || assembleQuantity < 1}
+                  onClick={async () => {
+                    setActionLoading(true);
+                    try {
+                      await updateConfiguration(selectedConfiguration.id, {
+                        category: assembleCategory.trim(),
+                        location: assembleLocation.trim(),
+                      });
+                      const res = await assembleConfiguration({
+                        configurationId: selectedConfiguration.id,
+                        quantity: assembleQuantity,
+                        notes: "Сборка с указанием категории и расположения",
+                      });
+                      if (res.success) {
+                        await loadConfigurations();
+                        refreshItems();
+                        setIsAssembleDialogOpen(false);
+                        toast({ title: `Собрано ${assembleQuantity} шт.`, description: `Категория: ${assembleCategory}, Расположение: ${assembleLocation}` });
+                      } else {
+                        toast({ title: "Ошибка", description: res.error, variant: "destructive" });
+                      }
+                    } finally {
+                      setActionLoading(false);
+                    }
+                  }}
+                >
+                  Собрать
+                </Button>
               </div>
             </div>
           )}
