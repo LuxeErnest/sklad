@@ -63,8 +63,6 @@ interface InventoryTableProps {
   onSelectItem?: (item: InventoryItem) => void;
   pageSizeOptions?: number[];
   defaultPageSize?: number;
-  /** Зарезервировано в конфигурациях (componentId -> кол-во). Если задано, в колонке показывается доступно = quantity - reserved */
-  reservedQuantities?: Record<number, number>;
 }
 
 export const InventoryTable = ({
@@ -75,10 +73,7 @@ export const InventoryTable = ({
   onSelectItem,
   pageSizeOptions = PAGE_SIZE_OPTIONS,
   defaultPageSize = DEFAULT_PAGE_SIZE,
-  reservedQuantities = {},
 }: InventoryTableProps) => {
-  const getAvailable = (i: InventoryItem) => i.quantity - (reservedQuantities[i.id] ?? 0);
-  const getReserved = (i: InventoryItem) => reservedQuantities[i.id] ?? 0;
   type SortKey = "name" | "category" | "quantity" | "lastUpdated";
   type SortDir = "asc" | "desc";
 
@@ -116,12 +111,9 @@ export const InventoryTable = ({
         case "category":
           res = a.category.localeCompare(b.category);
           break;
-        case "quantity": {
-          const qA = Object.keys(reservedQuantities).length ? getAvailable(a) : a.quantity;
-          const qB = Object.keys(reservedQuantities).length ? getAvailable(b) : b.quantity;
-          res = qA - qB;
+        case "quantity":
+          res = a.quantity - b.quantity;
           break;
-        }
         case "lastUpdated": {
           const at = a.lastUpdated ? new Date(a.lastUpdated).getTime() : 0;
           const bt = b.lastUpdated ? new Date(b.lastUpdated).getTime() : 0;
@@ -132,7 +124,7 @@ export const InventoryTable = ({
       return sortDir === "asc" ? res : -res;
     });
     return list;
-  }, [filtered, sortKey, sortDir, reservedQuantities]);
+  }, [filtered, sortKey, sortDir]);
 
   const setSort = (key: SortKey) => {
     setSortDir((prev) => (sortKey === key ? (prev === "asc" ? "desc" : "asc") : "asc"));
@@ -247,18 +239,12 @@ export const InventoryTable = ({
               </TableCell>
               <TableCell>{i.category}</TableCell>
               <TableCell>
-                {i.itemType === "configuration"
-                  ? `${i.quantity} шт.`
-                  : Object.keys(reservedQuantities).length
-                    ? getReserved(i) > 0
-                      ? (
-                          <span title={`Всего ${i.quantity} шт., в конфигурациях ${getReserved(i)} шт.`}>
-                            {getAvailable(i)} шт. <span className="text-muted-foreground text-xs">(в конфиг. {getReserved(i)})</span>
-                          </span>
-                        )
-                      : `${getAvailable(i)} шт.`
-                    : `${i.quantity} шт.`
-                }
+                {/*
+                  Показывается остаток как есть. Прежде здесь вычиталось
+                  «зарезервировано в конфигурациях», но резервирования больше
+                  нет: при сборке компоненты списываются, а не занимаются.
+                */}
+                {`${i.quantity} шт.`}
               </TableCell>
               <TableCell>{i.location}</TableCell>
               <TableCell>{i.lastUpdated ?? "—"}</TableCell>

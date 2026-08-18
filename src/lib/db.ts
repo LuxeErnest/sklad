@@ -12,6 +12,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { queryClient, queryKeys } from "@/lib/queryClient";
 
 // ---------- Типы, которые ждёт интерфейс ----------
 
@@ -117,9 +118,32 @@ export interface IntegrityReport {
 
 // ---------- Служебное ----------
 
-/** Событие для страниц, которые слушают обновления. */
+/**
+ * Сообщает интерфейсу, что данные изменились.
+ *
+ * Сбрасывает соответствующие ключи в кэше запросов и дополнительно рассылает
+ * прежние события DOM — на них ещё подписаны отдельные карточки. Раньше события
+ * были единственным механизмом, и подписчик в контексте ждал 400 мс дебаунса
+ * плюс 150 мс паузы, прежде чем перечитать вообще всё.
+ */
 function notify(...events: string[]) {
+  const keys: Record<string, readonly (readonly unknown[])[]> = {
+    componentsUpdated: [
+      queryKeys.items,
+      queryKeys.archivedItems,
+      queryKeys.locations,
+      queryKeys.operations,
+      queryKeys.statistics,
+      queryKeys.configurations,
+    ],
+    configurationsUpdated: [queryKeys.configurations, queryKeys.items, queryKeys.statistics],
+    documentsUpdated: [queryKeys.documents],
+  };
+
   for (const name of events) {
+    for (const key of keys[name] ?? []) {
+      queryClient.invalidateQueries({ queryKey: key });
+    }
     try {
       window.dispatchEvent(new CustomEvent(name));
     } catch {
@@ -778,16 +802,6 @@ export async function getAssembledCounts() {
 export async function getTotalAssembledCount(): Promise<number> {
   const rows = await invoke<ConfigurationView[]>("list_configurations");
   return rows.reduce((sum, c) => sum + c.assembled, 0);
-}
-
-/**
- * Резервирование убрано вместе с прежней моделью сборки.
- *
- * Компоненты при сборке списываются, а не «занимаются», поэтому занятого
- * количества больше не существует: то, что на складе, — свободно.
- */
-export async function getReservedQuantities(): Promise<Record<number, number>> {
-  return {};
 }
 
 export async function assembleConfiguration(payload: {

@@ -1,7 +1,8 @@
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
 import { HashRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { AppProvider } from "@/contexts/AppContext";
@@ -19,7 +20,6 @@ import SettingsPage from "./pages/Settings";
 import ProductCardPage from "./pages/ProductCard";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
 
 const App = () => {
   // useGlassmorphism hook disabled for now

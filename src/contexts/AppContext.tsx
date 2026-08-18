@@ -1,30 +1,43 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useCallback, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { InventoryItem } from "@/components/inventory/InventoryTable";
-import { initDb, getComponents, getComponentTagsMap, getCategoriesTree, getReservedQuantities, getTotalAssembledCount, getConfigurations, getAssembledCounts } from "@/lib/db";
+import {
+  getComponents,
+  getCategoriesTree,
+  getConfigurations,
+  getTags,
+} from "@/lib/db";
 import type { CategoryNode } from "@/lib/db";
+import { queryKeys } from "@/lib/queryClient";
 import { toast } from "@/hooks/use-toast";
 
+interface AssembledConfiguration {
+  configurationId: number;
+  name: string;
+  quantity: number;
+  category: string;
+  location: string;
+}
+
 interface AppContextType {
-  // Data
+  // Данные
   items: InventoryItem[];
   categories: string[];
   categoryTree: CategoryNode[];
   tags: { id: number; name: string }[];
   loading: boolean;
-  /** Зарезервировано в собранных конфигурациях (componentId -> количество) */
-  reservedQuantities: Record<number, number>;
   /** Общее количество собранных единиц конфигураций */
   totalAssembledCount: number;
-  /** Собранные конфигурации для отображения на складе (категория, расположение) */
-  assembledConfigurations: { configurationId: number; name: string; quantity: number; category: string; location: string }[];
-  
-  // Actions
+  /** Собранные конфигурации для отображения на складе */
+  assembledConfigurations: AssembledConfiguration[];
+
+  // Действия
   refreshItems: () => Promise<void>;
   getItemById: (id: number) => InventoryItem | undefined;
   getItemByBarcode: (barcode: string) => InventoryItem | undefined;
-  
-  // Navigation helpers
+
+  // Переходы
   navigateToItem: (itemId: number) => void;
   navigateToEdit: (itemId?: number) => void;
   navigateToAdd: () => void;
@@ -47,117 +60,119 @@ interface AppProviderProps {
 }
 
 function flattenCategoryNames(nodes: CategoryNode[]): string[] {
-  const out: string[] = [];
-  nodes.forEach((n) => {
-    out.push(n.name);
-    if (n.children.length) out.push(...flattenCategoryNames(n.children));
-  });
-  return out;
+  return nodes.flatMap((n) => [n.name, ...flattenCategoryNames(n.children)]);
 }
 
+/**
+ * Общие данные приложения.
+ *
+ * Загрузка держится на react-query, а не на ручном состоянии: каждый запрос
+ * живёт сам по себе, повторные обращения дедуплицируются, а после записи
+ * сбрасываются только затронутые ключи. Раньше здесь было ручное состояние и
+ * подписка на события DOM, которая после любого изменения ждала 400 мс, потом
+ * завершения очереди, потом ещё 150 мс — и перечитывала вообще всё.
+ *
+ * Вызов initDb отсюда убран: схему и миграции выполняет Rust при запуске, а
+ * прежний код дёргал инициализацию при каждом обновлении списка — то есть на
+ * каждое изменение количества выполнял шестнадцать CREATE TABLE и проверки схемы.
+ */
 export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [items, setItems] = useState<InventoryItem[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [categoryTree, setCategoryTree] = useState<CategoryNode[]>([]);
-  const [tags, setTags] = useState<{ id: number; name: string }[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [reservedQuantities, setReservedQuantities] = useState<Record<number, number>>({});
-  const [totalAssembledCount, setTotalAssembledCount] = useState(0);
-  const [assembledConfigurations, setAssembledConfigurations] = useState<{ configurationId: number; name: string; quantity: number; category: string; location: string }[]>([]);
+  const queryClient = useQueryClient();
 
-  const refreshItems = useCallback(async () => {
-    try {
-      setLoading(true);
-      await initDb();
-      const [rows, tagsMap, tagsList, tree, reserved, totalAssembled, configs, assembledCounts] = await Promise.all([
-        getComponents(),
-        getComponentTagsMap().catch(() => ({})),
-        import("@/lib/db").then((m) => m.getTags()).catch(() => []),
-        getCategoriesTree().catch(() => []),
-        getReservedQuantities().catch(() => ({})),
-        getTotalAssembledCount().catch(() => 0),
-        getConfigurations().catch(() => []),
-        getAssembledCounts().catch(() => []),
-      ]);
-      setReservedQuantities(reserved ?? {});
-      setTotalAssembledCount(totalAssembled ?? 0);
-      const countMap: Record<number, number> = {};
-      (assembledCounts || []).forEach((r: { configurationId: number; quantity: number }) => {
-        countMap[r.configurationId] = r.quantity;
-      });
-      const configList = (configs || []) as { id: number; name: string; category?: string; location?: string }[];
-      const forWarehouse = configList
-        .filter((c) => (countMap[c.id] ?? 0) > 0)
+  const itemsQuery = useQuery({
+    queryKey: queryKeys.items,
+    queryFn: getComponents,
+  });
+  const categoriesQuery = useQuery({
+    queryKey: queryKeys.categories,
+    queryFn: getCategoriesTree,
+  });
+  const tagsQuery = useQuery({
+    queryKey: queryKeys.tags,
+    queryFn: getTags,
+  });
+  const configurationsQuery = useQuery({
+    queryKey: queryKeys.configurations,
+    queryFn: getConfigurations,
+  });
+
+  const failure = itemsQuery.error ?? categoriesQuery.error ?? configurationsQuery.error;
+  useEffect(() => {
+    if (!failure) return;
+    console.error("Не удалось загрузить данные:", failure);
+    toast({
+      title: "Ошибка загрузки",
+      description: String(failure),
+      variant: "destructive",
+    });
+  }, [failure]);
+
+  const items = useMemo(() => (itemsQuery.data ?? []) as InventoryItem[], [itemsQuery.data]);
+  const categoryTree = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
+
+  const assembledConfigurations = useMemo<AssembledConfiguration[]>(
+    () =>
+      (configurationsQuery.data ?? [])
+        .filter((c) => (c.assembled ?? 0) > 0)
         .map((c) => ({
           configurationId: c.id,
           name: c.name,
-          quantity: countMap[c.id] ?? 0,
-          category: (c.category && c.category.trim()) || "Конфигурации",
-          location: (c.location && c.location.trim()) || "—",
-        }));
-      setAssembledConfigurations(forWarehouse);
-      
-      const flatCategories = tree?.length ? flattenCategoryNames(tree) : [];
-      setCategoryTree(tree?.length ? tree : []);
-      if (rows && Array.isArray(rows)) {
-        const withTags = (rows as InventoryItem[]).map((r) => ({
-          ...r,
-          tags: tagsMap[r.id] || [],
-        }));
-        setItems(withTags);
-        setTags(tagsList || []);
-        const fromItems = Array.from(new Set(withTags.map((r) => r.category).filter(Boolean)));
-        const fromConfigs = forWarehouse.map((c) => c.category).filter(Boolean);
-        setCategories([...new Set([...flatCategories, ...fromItems, ...fromConfigs])]);
-        if ((!tree || tree.length === 0) && fromItems.length > 0) {
-          setCategoryTree(fromItems.map((name, i) => ({ id: i + 1, name, parentId: null, children: [] })));
-        }
-      } else {
-        setItems([]);
-        setCategories([...new Set([...flatCategories, ...forWarehouse.map((c) => c.category)])]);
-      }
-    } catch (error) {
-      console.error('❌ Error loading components:', error);
-      setItems([]);
-      setCategories([]);
-      toast({
-        title: "Ошибка загрузки",
-        description: "Не удалось загрузить данные",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+          quantity: c.assembled ?? 0,
+          category: c.category?.trim() || "Конфигурации",
+          location: c.location?.trim() || "—",
+        })),
+    [configurationsQuery.data]
+  );
 
-  const getItemById = useCallback((id: number): InventoryItem | undefined => {
-    return items.find(item => item.id === id);
-  }, [items]);
+  const totalAssembledCount = useMemo(
+    () => assembledConfigurations.reduce((sum, c) => sum + c.quantity, 0),
+    [assembledConfigurations]
+  );
 
-  const getItemByBarcode = useCallback((barcode: string): InventoryItem | undefined => {
-    return items.find(item => item.barcode && item.barcode.toLowerCase() === barcode.toLowerCase());
-  }, [items]);
+  const categories = useMemo(() => {
+    const fromTree = flattenCategoryNames(categoryTree);
+    const fromItems = items.map((i) => i.category).filter(Boolean) as string[];
+    const fromConfigs = assembledConfigurations.map((c) => c.category);
+    return [...new Set([...fromTree, ...fromItems, ...fromConfigs])];
+  }, [categoryTree, items, assembledConfigurations]);
+
+  /** Принудительное обновление — для мест, где обновление запрашивают явно. */
+  const refreshItems = useCallback(async () => {
+    await queryClient.invalidateQueries();
+  }, [queryClient]);
+
+  const getItemById = useCallback(
+    (id: number) => items.find((item) => item.id === id),
+    [items]
+  );
+
+  const getItemByBarcode = useCallback(
+    (barcode: string) =>
+      items.find((item) => item.barcode && item.barcode.toLowerCase() === barcode.toLowerCase()),
+    [items]
+  );
 
   // Переходы внутри приложения.
   //
-  // Раньше здесь был window.location.href — полная перезагрузка страницы с
-  // потерей всего состояния React и повторной загрузкой данных. Так было
-  // сделано вынужденно: контекст стоял выше роутера, и useNavigate был
-  // недоступен. Порядок провайдеров исправлен, поэтому переходы стали обычной
-  // сменой маршрута.
-  const navigateToItem = useCallback((itemId: number) => {
-    navigate("/");
-    // Выбор строки происходит уже после отрисовки списка.
-    requestAnimationFrame(() => {
-      window.dispatchEvent(new CustomEvent("selectItem", { detail: { itemId } }));
-    });
-  }, [navigate]);
+  // Раньше здесь был window.location.href — полная перезагрузка документа с
+  // потерей состояния. Так было сделано вынужденно: контекст стоял выше роутера,
+  // и useNavigate был недоступен. Порядок провайдеров исправлен.
+  const navigateToItem = useCallback(
+    (itemId: number) => {
+      navigate("/");
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new CustomEvent("selectItem", { detail: { itemId } }));
+      });
+    },
+    [navigate]
+  );
 
-  const navigateToEdit = useCallback((itemId?: number) => {
-    navigate(itemId ? `/edit?itemId=${itemId}` : "/edit");
-  }, [navigate]);
+  const navigateToEdit = useCallback(
+    (itemId?: number) => navigate(itemId ? `/edit?itemId=${itemId}` : "/edit"),
+    [navigate]
+  );
 
   const navigateToAdd = useCallback(() => {
     if (location.pathname !== "/") navigate("/");
@@ -166,58 +181,23 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     });
   }, [navigate, location.pathname]);
 
-  const navigateToDocuments = useCallback((itemId?: number) => {
-    navigate(itemId ? `/documents?itemId=${itemId}` : "/documents");
-  }, [navigate]);
+  const navigateToDocuments = useCallback(
+    (itemId?: number) => navigate(itemId ? `/documents?itemId=${itemId}` : "/documents"),
+    [navigate]
+  );
 
-  const navigateToConfigurations = useCallback((configId?: number) => {
-    navigate(configId ? `/configurations?configId=${configId}` : "/configurations");
-  }, [navigate]);
-
-  // Initial load
-  useEffect(() => {
-    refreshItems();
-  }, [refreshItems]);
-
-  // Listen for update events (debounced to avoid overload on mass add)
-  useEffect(() => {
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    const handleComponentsUpdated = async () => {
-      if (timeoutId) clearTimeout(timeoutId);
-      timeoutId = setTimeout(async () => {
-        timeoutId = null;
-        try {
-          const { waitForQueueCompletion } = await import('@/lib/db');
-          await waitForQueueCompletion();
-        } catch {}
-        await new Promise((r) => setTimeout(r, 150));
-        await refreshItems();
-      }, 400);
-    };
-
-    const handleConfigurationsUpdated = () => {
-      if (timeoutId) clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        timeoutId = null;
-        refreshItems();
-      }, 300);
-    };
-    window.addEventListener('componentsUpdated', handleComponentsUpdated);
-    window.addEventListener('configurationsUpdated', handleConfigurationsUpdated);
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId);
-      window.removeEventListener('componentsUpdated', handleComponentsUpdated);
-      window.removeEventListener('configurationsUpdated', handleConfigurationsUpdated);
-    };
-  }, [refreshItems]);
+  const navigateToConfigurations = useCallback(
+    (configId?: number) =>
+      navigate(configId ? `/configurations?configId=${configId}` : "/configurations"),
+    [navigate]
+  );
 
   const value: AppContextType = {
     items,
     categories,
     categoryTree,
-    tags,
-    loading,
-    reservedQuantities,
+    tags: tagsQuery.data ?? [],
+    loading: itemsQuery.isLoading || categoriesQuery.isLoading,
     totalAssembledCount,
     assembledConfigurations,
     refreshItems,

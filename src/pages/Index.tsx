@@ -36,7 +36,7 @@ function categoryNamesWithDescendants(tree: { name: string; children: { name: st
 
 const Index = () => {
   const navigate = useNavigate();
-  const { items, categories, categoryTree, tags, refreshItems, reservedQuantities, totalAssembledCount, assembledConfigurations } = useApp();
+  const { items, categories, categoryTree, tags, refreshItems, totalAssembledCount, assembledConfigurations } = useApp();
   const [addingItem, setAddingItem] = useState(false);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string | null>(null);
@@ -196,7 +196,6 @@ const Index = () => {
                 categoryFilterNames={categoryFilterNames}
                 selectedItem={selectedItem}
                 onSelectItem={setSelectedItem}
-                reservedQuantities={reservedQuantities}
               />
             </section>
             <aside aria-label="Информация о товаре">

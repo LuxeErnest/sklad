@@ -76,7 +76,7 @@ const Calculator = () => {
   const [activeTab, setActiveTab] = useState("analytics");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [availabilityFilter, setAvailabilityFilter] = useState<string>("all");
-  const { items, categories, refreshItems, reservedQuantities } = useApp();
+  const { items, categories, refreshItems } = useApp();
   const [isLoading, setIsLoading] = useState(false);
   const [configurations, setConfigurations] = useState<any[]>(mockConfigurations);
   const [warehouseStats, setWarehouseStats] = useState<any>({});
@@ -179,8 +179,9 @@ const Calculator = () => {
         stockComponent: null
       };
       
-      const reserved = reservedQuantities[comp.componentId] ?? 0;
-      const available = Math.max(0, stockComponent.quantity - reserved);
+      // Резервирования больше нет: компоненты при сборке списываются,
+      // поэтому доступно ровно то, что лежит на складе.
+      const available = stockComponent.quantity;
       const required = comp.quantity;
       const maxBuilds = Math.floor(available / required);
       const status: AvailabilityStatus = available >= required ? 'available' : available > 0 ? 'partial' : 'unavailable';
@@ -281,7 +282,7 @@ const Calculator = () => {
       canBuildHighPriority,
       totalConfigurations: configurations.length
     };
-  }, [components, configurations, reservedQuantities]);
+  }, [components, configurations]);
 
   const updateQuantity = (itemId: number, quantity: number) => {
     // Validate quantity against available stock

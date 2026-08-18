@@ -27,7 +27,6 @@ interface ItemBriefInfoProps {
 
 export const ItemBriefInfo = ({ item }: ItemBriefInfoProps) => {
   const navigate = useNavigate();
-  const { reservedQuantities } = useApp();
   const [certificates, setCertificates] = useState<Array<{ id: number; name: string; type: string; url: string }>>([]);
 
   useEffect(() => {
@@ -113,8 +112,7 @@ export const ItemBriefInfo = ({ item }: ItemBriefInfoProps) => {
     );
   }
 
-  const reserved = item.id ? reservedQuantities[item.id] ?? 0 : 0;
-  const available = item.quantity - reserved;
+  const available = item.quantity;
 
   return (
     <Card className="h-fit">
@@ -132,16 +130,7 @@ export const ItemBriefInfo = ({ item }: ItemBriefInfoProps) => {
           <div className="flex items-center gap-2">
             <Package className="h-4 w-4 text-muted-foreground shrink-0" />
             <span className="text-muted-foreground">Количество:</span>
-            {reserved > 0 ? (
-              <span className="font-medium">
-                {available} шт.{" "}
-                <span className="text-xs text-muted-foreground">
-                  (в конфигурациях {reserved}, всего {item.quantity})
-                </span>
-              </span>
-            ) : (
-              <span className="font-medium">{available} шт.</span>
-            )}
+            <span className="font-medium">{available} шт.</span>
           </div>
 
           {item.price != null && item.price > 0 && (

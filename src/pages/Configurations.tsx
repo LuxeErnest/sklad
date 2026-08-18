@@ -36,7 +36,7 @@ const formSchema = z.object({
 type FormData = z.infer<typeof formSchema>;
 
 const Configurations = () => {
-  const { items, categories, refreshItems, reservedQuantities } = useApp();
+  const { items, categories, refreshItems } = useApp();
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -177,8 +177,8 @@ const Configurations = () => {
     const availability: AvailabilityItem[] = config.components.map(comp => {
       const stockComponent = components.find(c => c.id === comp.componentId);
       if (!stockComponent) return { ...comp, available: 0, required: comp.quantity, status: 'missing' as const, stockComponent: null } as AvailabilityItem;
-      const reserved = reservedQuantities[comp.componentId] ?? 0;
-      const available = Math.max(0, stockComponent.quantity - reserved);
+      // Резервирования больше нет: доступно то, что на складе.
+      const available = stockComponent.quantity;
       const required = comp.quantity;
       const status: AvailabilityStatus = available >= required ? 'available' : available > 0 ? 'partial' : 'unavailable';
       return { ...comp, available, required, status, stockComponent } as AvailabilityItem;
@@ -596,14 +596,13 @@ const Configurations = () => {
               
               <div className="mt-2 space-y-2 max-h-64 overflow-y-auto">
                 {filteredComponentsForCreation.map(component => {
-                  const reserved = reservedQuantities[component.id] ?? 0;
-                  const available = Math.max(0, component.quantity - reserved);
+                  const available = component.quantity;
                   return (
                   <div key={component.id} className="flex items-center justify-between p-3 border rounded-lg">
                     <div className="flex-1">
                       <div className="font-medium">{component.name}</div>
                       <div className="text-sm text-muted-foreground">
-                        {component.category} • {component.price}₽/шт. • Доступно: {available} шт.{reserved > 0 && ` (в конфиг. ${reserved})`}
+                        {component.category} • {component.price}₽/шт. • Доступно: {available} шт.
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
