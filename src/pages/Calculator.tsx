@@ -976,23 +976,13 @@ const Calculator = () => {
                           </table>
                         </div>
                         
+                        {/*
+                          Кнопка «Очистить список» убрана: списания — часть
+                          журнала, из которого выводятся остатки, и удаление
+                          записей рассогласовало бы склад. Ошибочное списание
+                          исправляется обратной операцией, а не забыванием.
+                        */}
                         <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            className="flex-1 transition-all duration-200 hover:scale-105"
-                            onClick={async () => {
-                              try {
-                                const { clearScrappedItems } = await import("@/lib/db");
-                                await clearScrappedItems();
-                                setScrappedItems([]);
-                              } catch (error) {
-                                console.error('Error clearing scrapped items:', error);
-                              }
-                            }}
-                          >
-                            <XCircle className="h-4 w-4 mr-2" />
-                            Очистить список
-                          </Button>
                           <Button
                             className="flex-1 transition-all duration-200 hover:scale-105"
                             onClick={() => {

@@ -365,6 +365,11 @@ export async function getLocationJournal(locationId: number, limit = 500) {
   return await invoke<OperationLineView[]>("location_journal", { locationId, limit });
 }
 
+/** Общий журнал; при указании типа — только операции этого вида. */
+export async function getOperations(kind?: string, limit = 500) {
+  return await invoke<OperationLineView[]>("list_operations", { kind: kind ?? null, limit });
+}
+
 export async function getComponentUsageHistory(componentId?: number) {
   const lines = componentId
     ? await invoke<OperationLineView[]>("item_history", { itemId: componentId })
@@ -577,20 +582,6 @@ export async function getSupplyRecordsByComponentId(componentId: number) {
       suppliedBy: l.performedBy,
       location: l.toLocation,
     }));
-}
-
-/**
- * Раньше эта кнопка удаляла историю списаний.
- *
- * Теперь журнал — основа учёта: остаток выводится из него, поэтому удаление
- * записей рассогласовало бы склад. Ошибка выбрасывается намеренно, чтобы
- * действие не выглядело выполненным.
- */
-export async function clearScrappedItems(): Promise<never> {
-  throw new Error(
-    "История списаний больше не удаляется: из неё выводятся остатки. " +
-      "Ошибочное списание исправляется обратной операцией."
-  );
 }
 
 // ---------- Категории ----------

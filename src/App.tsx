@@ -14,6 +14,7 @@ import Calculator from "./pages/Calculator";
 import Edit from "./pages/Edit";
 import Configurations from "./pages/Configurations";
 import Documents from "./pages/Documents";
+import Journal from "./pages/Journal";
 import SettingsPage from "./pages/Settings";
 import ProductCardPage from "./pages/ProductCard";
 import NotFound from "./pages/NotFound";
@@ -43,6 +44,7 @@ const App = () => {
                   <Route path="/edit" element={<Edit />} />
                   <Route path="/configurations" element={<Configurations />} />
                   <Route path="/documents" element={<Documents />} />
+                  <Route path="/journal" element={<Journal />} />
                   <Route path="/settings" element={<SettingsPage />} />
                   <Route path="/item/:id" element={<ProductCardPage />} />
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

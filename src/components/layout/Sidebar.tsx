@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import GlassmorphismWrapper from "@/components/theme/GlassmorphismWrapper";
 import SimpleCalculator from "@/components/calculator/SimpleCalculator";
-import { Plus, Pencil, Calculator, Settings, FileText, Wrench, Home, Hash } from "lucide-react";
+import { Plus, Pencil, Calculator, Settings, FileText, Wrench, Home, Hash, ScrollText } from "lucide-react";
 import { useApp } from "@/contexts/AppContext";
 
 export const Sidebar = () => {
@@ -127,6 +127,12 @@ export const Sidebar = () => {
           label="Конфигурации" 
           onClick={() => navigate("/configurations")} 
           isActive={location.pathname === "/configurations"}
+        />
+        <Item 
+          icon={ScrollText} 
+          label="Журнал" 
+          onClick={() => navigate("/journal")} 
+          isActive={location.pathname === "/journal"}
         />
         <Item 
           icon={FileText} 
