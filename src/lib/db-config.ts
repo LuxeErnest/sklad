@@ -26,9 +26,7 @@ export class DatabaseBackup {
    * находится в отдельном журнале и копия одного файла оказалась бы неполной.
    */
   public static async createBackup(): Promise<string> {
-    const path = await invoke<string>("create_backup");
-    console.log(`✅ Резервная копия создана: ${path}`);
-    return path;
+    return await invoke<string>("create_backup");
   }
 
   public static async listBackups(): Promise<BackupInfo[]> {

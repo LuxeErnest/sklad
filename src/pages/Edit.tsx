@@ -236,28 +236,26 @@ const Edit = () => {
 
   const handleScrapSubmit = async () => {
     if (!scrapItem || !scrapQuantity) {
-      alert("Заполните количество для списания");
+      toast({ title: "Укажите количество", description: "Без количества списать нечего", variant: "destructive" });
       return;
     }
 
     const quantity = parseInt(scrapQuantity);
     if (quantity <= 0) {
-      alert("Количество должно быть больше 0");
+      toast({ title: "Количество должно быть больше нуля", variant: "destructive" });
       return;
     }
 
     // Проверяем, нужно ли выбирать склад (только если списываем не все)
     const isScrapAll = quantity === scrapItem.quantity;
     if (!isScrapAll && !scrapLocation) {
-      alert("Выберите склад для списания");
+      toast({ title: "Выберите склад", description: "Списание идёт с конкретного места хранения", variant: "destructive" });
       return;
     }
 
     try {
       if (isScrapAll) {
         // Списание всего количества со всех складов
-        console.log(`🗑️ Scrapping all ${quantity} items from all locations for component ${scrapItem.id}`);
-        
         // Delete all groups for this component
         await scrapAllFromAllLocations(scrapItem.id);
         
@@ -270,11 +268,9 @@ const Edit = () => {
           updateQuantity: false
         });
 
-        alert(`Списано все количество (${quantity} шт.) товара "${scrapItem.name}" со всех складов`);
+        toast({ title: "Списано со всех складов", description: `«${scrapItem.name}» — ${quantity} шт.` });
       } else {
         // Списание частичного количества с конкретного склада
-        console.log(`🗑️ Scrapping ${quantity} items from location ${scrapLocation} for component ${scrapItem.id}`);
-        
         // Update group quantity or delete if reaches 0
         await scrapFromLocation(scrapItem.id, scrapLocation, quantity);
         
@@ -287,7 +283,7 @@ const Edit = () => {
           updateQuantity: false
         });
 
-        alert(`Списано ${quantity} шт. товара "${scrapItem.name}" со склада ${scrapLocation}`);
+        toast({ title: "Списано", description: `«${scrapItem.name}» — ${quantity} шт. со склада «${scrapLocation}»` });
       }
 
       setIsScrapDialogOpen(false);
@@ -297,7 +293,11 @@ const Edit = () => {
       await refreshItems();
     } catch (error) {
       console.error('Error scrapping item:', error);
-      alert(`Ошибка при списании:\n\n${getErrorMessage(error)}`);
+      toast({
+        title: "Не удалось списать",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
     }
   };
 

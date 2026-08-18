@@ -47,6 +47,7 @@ import {
 import * as XLSX from 'xlsx';
 import { formatCurrency } from "@/lib/utils";
 import { useApp } from "@/contexts/AppContext";
+import { toast } from "@/hooks/use-toast";
 import { ItemLink } from "@/components/common/ItemLink";
 
 // Type definitions for better type safety
@@ -319,14 +320,13 @@ const Calculator = () => {
       timestamp: new Date().toISOString(),
     };
     // In a real app, this would save to localStorage or backend
-    console.log('Saving calculation:', calculation);
   };
 
   // Function to build configuration: резервирует компоненты (сборка без списания со склада)
   const buildConfiguration = async (config: typeof mockConfigurations[0]) => {
     const availability = calculateConfigurationAvailability(config);
     if (availability.maxPossibleBuilds === 0) {
-      alert('Недостаточно компонентов для сборки этой конфигурации');
+      toast({ title: "Недостаточно компонентов", description: "Для сборки этой конфигурации не хватает остатков", variant: "destructive" });
       return;
     }
     setIsLoading(true);
@@ -339,13 +339,13 @@ const Calculator = () => {
       if (res.success) {
         await loadData();
         refreshItems();
-        alert(`Сборка ${availability.maxPossibleBuilds} единиц ${config.name} завершена. Компоненты зарезервированы в конфигурации.`);
+        toast({ title: "Сборка выполнена", description: `«${config.name}» — ${availability.maxPossibleBuilds} шт. Компоненты списаны со складов.` });
       } else {
-        alert(res.error || 'Ошибка при сборке конфигурации');
+        toast({ title: "Не удалось собрать", description: res.error || "Ошибка при сборке конфигурации", variant: "destructive" });
       }
     } catch (error) {
       console.error('Error building configuration:', error);
-      alert('Ошибка при сборке конфигурации');
+      toast({ title: "Не удалось собрать", description: "Ошибка при сборке конфигурации", variant: "destructive" });
     } finally {
       setIsLoading(false);
     }

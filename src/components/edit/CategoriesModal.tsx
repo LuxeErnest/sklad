@@ -8,6 +8,7 @@ import { getCategoriesTree, createCategory, updateCategory, deleteCategory } fro
 import type { CategoryNode } from "@/lib/db";
 import { FolderTree, Plus, Pencil, Trash2, ChevronRight } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 import { getErrorMessage } from "@/services/errorHandler";
 
 interface CategoriesModalProps {
@@ -25,6 +26,7 @@ export function CategoriesModal({
   onSelect,
   onDeleted,
 }: CategoriesModalProps) {
+  const { confirm, dialog } = useConfirm();
   const [tree, setTree] = useState<CategoryNode[]>([]);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [newName, setNewName] = useState("");
@@ -77,7 +79,13 @@ export function CategoriesModal({
   };
 
   const handleDelete = async (id: number, name: string) => {
-    if (!confirm(`Удалить категорию «${name}»? Изделия будут переназначены в «Без категории».`)) return;
+    const ok = await confirm({
+      title: `Удалить категорию «${name}»?`,
+      description: "Изделия из неё останутся, но потеряют категорию.",
+      confirmLabel: "Удалить",
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await deleteCategory(id, "Без категории");
       const next = await getCategoriesTree();
@@ -167,6 +175,7 @@ export function CategoriesModal({
           </div>
         </div>
       </DialogContent>
+      {dialog}
     </Dialog>
   );
 }

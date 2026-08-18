@@ -103,8 +103,6 @@ export const LocationDistribution = ({ componentId, componentName }: LocationDis
 
   const loadData = async () => {
     try {
-      console.log('🔄 Loading data for componentId:', componentId);
-      
       if (!componentId || componentId <= 0) {
         console.warn('⚠️ Invalid componentId:', componentId);
         setPaths([]);
@@ -126,11 +124,7 @@ export const LocationDistribution = ({ componentId, componentName }: LocationDis
         })
       ]);
       
-      console.log('✅ Loaded paths:', pathsData);
-      console.log('✅ Loaded groups:', groupsData);
-      
-      // Validate and set data
-      setPaths(Array.isArray(pathsData) ? pathsData : []);
+            setPaths(Array.isArray(pathsData) ? pathsData : []);
       setGroups(Array.isArray(groupsData) ? groupsData : []);
     } catch (error) {
       console.error('❌ Error loading data:', error);

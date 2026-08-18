@@ -20,6 +20,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useApp } from "@/contexts/AppContext";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 import { useSearchParams } from "react-router-dom";
 import { ItemLink } from "@/components/common/ItemLink";
 import { toast } from "@/hooks/use-toast";
@@ -37,6 +38,7 @@ type FormData = z.infer<typeof formSchema>;
 
 const Configurations = () => {
   const { items, categories, refreshItems } = useApp();
+  const { confirm, dialog } = useConfirm();
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -250,7 +252,13 @@ const Configurations = () => {
   };
 
   const handleDeleteConfiguration = async (id: number) => {
-    if (!confirm("Вы уверены, что хотите удалить эту конфигурацию?")) return;
+    const ok = await confirm({
+      title: "Удалить конфигурацию?",
+      description: "Рецепт сборки исчезнет. Уже собранные изделия останутся на складе.",
+      confirmLabel: "Удалить",
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await deleteConfiguration(id);
       await loadConfigurations();
@@ -784,14 +792,20 @@ const Configurations = () => {
                         variant="destructive"
                         disabled={actionLoading}
                         onClick={async () => {
-                          if (!confirm(`Списать ${writeOffQty} единиц конфигурации? Компоненты будут списаны со склада.`)) return;
+                          const ok = await confirm({
+                            title: `Списать ${writeOffQty} шт. собранного изделия?`,
+                            description: "Со склада уйдёт готовое изделие. Компоненты израсходованы ещё при сборке и не возвращаются.",
+                            confirmLabel: "Списать",
+                            destructive: true,
+                          });
+                          if (!ok) return;
                           setActionLoading(true);
                           const res = await writeOffConfiguration(selectedConfiguration.id, writeOffQty);
                           setActionLoading(false);
                           if (res.success) {
                             await loadConfigurations();
                             refreshItems();
-                            toast({ title: `Списано ${writeOffQty} шт.`, description: "Компоненты списаны со склада", variant: "destructive" });
+                            toast({ title: `Списано ${writeOffQty} шт.`, description: "Собранное изделие снято со склада", variant: "destructive" });
                             setWriteOffQty(1);
                           } else {
                             toast({ title: "Ошибка", description: res.error, variant: "destructive" });
@@ -887,6 +901,7 @@ const Configurations = () => {
           )}
         </DialogContent>
       </Dialog>
+      {dialog}
     </div>
   );
 };

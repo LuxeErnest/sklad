@@ -6,8 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { getTags, createTag, updateTag, deleteTag } from "@/lib/db";
 import { Tag, Plus, Pencil, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 
 export function TagsManager() {
+  const { confirm, dialog } = useConfirm();
   const [tags, setTags] = useState<{ id: number; name: string }[]>([]);
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -58,7 +60,13 @@ export function TagsManager() {
   };
 
   const handleDelete = async (id: number, name: string) => {
-    if (!confirm(`Удалить тег «${name}»?`)) return;
+    const ok = await confirm({
+      title: `Удалить тег «${name}»?`,
+      description: "Тег снимется со всех изделий, сами изделия не пострадают.",
+      confirmLabel: "Удалить",
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await deleteTag(id);
       await load();
@@ -129,6 +137,7 @@ export function TagsManager() {
         </ul>
         {tags.length === 0 && <p className="text-sm text-muted-foreground">Нет тегов. Создайте первый.</p>}
       </CardContent>
+      {dialog}
     </Card>
   );
 }

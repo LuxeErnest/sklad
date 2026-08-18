@@ -19,6 +19,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { getDocuments, addDocument, deleteDocument as dbDeleteDocument, updateDocumentLinks } from "@/lib/db";
 import { useApp } from "@/contexts/AppContext";
+import { toast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/common/ConfirmDialog";
 import { useSearchParams } from "react-router-dom";
 import { InventoryItem } from "@/components/inventory/InventoryTable";
 import { ItemLink } from "@/components/common/ItemLink";
@@ -45,6 +47,7 @@ const Documents = () => {
   const items: InventoryItem[] = context?.items || [];
   const refreshItems = context?.refreshItems;
   
+  const { confirm, dialog } = useConfirm();
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -235,7 +238,7 @@ const Documents = () => {
   const handleUploadDocument = async (data: FormData) => {
     if (!selectedFile) return;
     if (!selectedComponentIds.length) {
-      alert('Выберите одно или несколько изделий для привязки');
+      toast({ title: "Не выбрано изделие", description: "Документ привязывается хотя бы к одному изделию", variant: "destructive" });
       return;
     }
     try {
@@ -294,15 +297,20 @@ const Documents = () => {
       form.reset();
     } catch (error) {
       console.error('❌ Error uploading document:', error);
-      alert('Ошибка при загрузке документа. Попробуйте еще раз.');
+      toast({ title: "Не удалось загрузить документ", description: "Попробуйте ещё раз", variant: "destructive" });
     }
   };
 
   const handleDeleteDocument = async (id: number) => {
-    if (confirm("Вы уверены, что хотите удалить этот документ?")) {
-      await dbDeleteDocument(id);
-      setDocuments(prev => prev.filter(doc => doc.id !== id));
-    }
+    const ok = await confirm({
+      title: "Удалить документ?",
+      description: "Файл будет удалён с диска, если на него не ссылаются другие записи.",
+      confirmLabel: "Удалить",
+      destructive: true,
+    });
+    if (!ok) return;
+    await dbDeleteDocument(id);
+    setDocuments(prev => prev.filter(doc => doc.id !== id));
   };
 
   const handleViewDocument = (document: typeof mockDocuments[0]) => {
@@ -852,6 +860,7 @@ const Documents = () => {
           </div>
         </DialogContent>
       </Dialog>
+      {dialog}
     </div>
   );
 };
