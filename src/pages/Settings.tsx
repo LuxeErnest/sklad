@@ -16,6 +16,7 @@ import { CacheCard } from "@/components/database/CacheCard";
 import { BackupCard } from "@/components/database/BackupCard";
 import { ArchiveCard } from "@/components/database/ArchiveCard";
 import { IntegrityCard } from "@/components/database/IntegrityCard";
+import { LocationsCard } from "@/components/database/LocationsCard";
 
 const SettingsPage = () => {
   const [search, setSearch] = useState("");
@@ -242,6 +243,9 @@ const SettingsPage = () => {
 
                   {/* 6. Целостность данных */}
                   <IntegrityCard />
+
+                  {/* 7. Места хранения */}
+                  <LocationsCard />
 
                   {/* 7. Изменить местоположение БД */}
                   {/*

@@ -417,6 +417,18 @@ pub fn merge_locations(source_id: i64, target_id: i64, db: State<'_, Db>) -> DbR
         )?;
         tx.execute("DELETE FROM stock WHERE location_id = ?1", params![source_id])?;
 
+        // Перемещения между объединяемыми местами убираются ДО переписывания
+        // истории. После слияния это стало бы перемещением «сам в себя», что
+        // запрещено проверкой в схеме — и она сработала бы прямо на UPDATE.
+        // На суммы это не влияет: такая строка даёт минус и плюс на одном и том
+        // же месте, то есть ноль.
+        tx.execute(
+            "DELETE FROM operation_lines
+              WHERE (from_location_id = ?1 AND to_location_id = ?2)
+                 OR (from_location_id = ?2 AND to_location_id = ?1)",
+            params![source_id, target_id],
+        )?;
+
         // История переписывается на новое место, иначе журнал осиротеет.
         tx.execute(
             "UPDATE operation_lines SET from_location_id = ?2 WHERE from_location_id = ?1",
@@ -426,9 +438,11 @@ pub fn merge_locations(source_id: i64, target_id: i64, db: State<'_, Db>) -> DbR
             "UPDATE operation_lines SET to_location_id = ?2 WHERE to_location_id = ?1",
             params![source_id, target_id],
         )?;
-        // Перемещение «сам в себя» после слияния теряет смысл.
+
+        // Операции, оставшиеся вовсе без строк, смысла не несут.
         tx.execute(
-            "DELETE FROM operation_lines WHERE from_location_id = to_location_id",
+            "DELETE FROM operations
+              WHERE NOT EXISTS (SELECT 1 FROM operation_lines l WHERE l.operation_id = operations.id)",
             [],
         )?;
         tx.execute("DELETE FROM locations WHERE id = ?1", params![source_id])?;
