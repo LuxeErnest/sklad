@@ -53,14 +53,31 @@ const formSchema = z.object({
 
 type FormData = z.infer<typeof formSchema>;
 
+/**
+ * Форма редактирования работает и с записями из БД, и с запасным набором.
+ * Раньше состояние типизировалось прямо по мок-объекту, из-за чего InventoryItem
+ * в него не присваивался: у него нет поля website.
+ */
+type EditableItem = {
+  id: number;
+  name: string;
+  quantity: number;
+  category: string;
+  location: string;
+  lastUpdated?: string;
+  description?: string;
+  website?: string;
+  price?: number;
+};
+
 const Edit = () => {
   const { items, categories, refreshItems, getItemById } = useApp();
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [editingItem, setEditingItem] = useState<typeof mockItems[0] | null>(null);
+  const [editingItem, setEditingItem] = useState<EditableItem | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [scrapItem, setScrapItem] = useState<typeof mockItems[0] | null>(null);
+  const [scrapItem, setScrapItem] = useState<EditableItem | null>(null);
   const [isScrapDialogOpen, setIsScrapDialogOpen] = useState(false);
   const [scrapQuantity, setScrapQuantity] = useState("");
   const [scrapLocation, setScrapLocation] = useState("");
@@ -164,7 +181,7 @@ const Edit = () => {
     }
   };
 
-  const handleEdit = (item: typeof mockItems[0]) => {
+  const handleEdit = (item: EditableItem) => {
     setEditingItem(item);
     form.reset({
       name: item.name,
@@ -199,7 +216,7 @@ const Edit = () => {
     }
   };
 
-  const handleScrap = async (item: typeof mockItems[0]) => {
+  const handleScrap = async (item: EditableItem) => {
     setScrapItem(item);
     setScrapQuantity("");
     setScrapLocation("");

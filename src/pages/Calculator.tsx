@@ -109,7 +109,7 @@ const Calculator = () => {
             const comp = items.find((r: any) => r.id === it.componentId);
             return s + (comp?.price || 0) * it.quantity;
           }, 0);
-          full.push({ ...c, components: componentsList, totalItems, totalValue, priority: c.priority || "medium" });
+          full.push({ ...c, components: componentsList, totalItems, totalValue, priority: "medium" });
         }
         setConfigurations(full);
       } else {

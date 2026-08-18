@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Package, DollarSign, Calendar, FileText, Download, ChevronRight } from "lucide-react";
-import { getCertificatesByComponentId } from "@/lib/db";
+import { getCertificatesByComponentId, readDocument } from "@/lib/db";
 import { InventoryItem } from "./InventoryTable";
 import { useApp } from "@/contexts/AppContext";
 
@@ -35,14 +35,18 @@ export const ItemBriefInfo = ({ item }: ItemBriefInfoProps) => {
       setCertificates([]);
       return;
     }
+    // Содержимое файлов больше не лежит в базе и не приходит вместе со списком:
+    // оно читается с диска отдельно и только для тех документов, что показываем.
     getCertificatesByComponentId(item.id)
       .then((rows) =>
-        rows.map((r) => ({
-          id: r.id,
-          name: r.name,
-          type: r.type,
-          url: `data:${getMimeFromExtension(r.type)};base64,${r.dataBase64 || ''}`,
-        }))
+        Promise.all(
+          rows.map(async (r) => ({
+            id: r.id,
+            name: r.name,
+            type: r.type,
+            url: `data:${getMimeFromExtension(r.type)};base64,${await readDocument(r.id).catch(() => "")}`,
+          }))
+        )
       )
       .then(setCertificates)
       .catch(() => setCertificates([]));

@@ -22,9 +22,9 @@ export const IntegrityCard = () => {
   const [confirmRepair, setConfirmRepair] = useState(false);
 
   const problemCount = report
-    ? report.quantityMismatches.length +
-      report.missingLocations.length +
-      report.duplicateGroupComponents.length +
+    ? report.stockDrift.length +
+      report.negativeStock +
+      report.orphanOperations +
       report.foreignKeyViolations
     : 0;
 
@@ -50,14 +50,11 @@ export const IntegrityCard = () => {
     setBusy(true);
     try {
       const result = await repairIntegrity();
-      const parts = [
-        result.quantitiesFixed ? `остатков выровнено: ${result.quantitiesFixed}` : "",
-        result.locationsCreated ? `мест хранения создано: ${result.locationsCreated}` : "",
-        result.duplicatesMerged ? `дублей схлопнуто: ${result.duplicatesMerged}` : "",
-      ].filter(Boolean);
       toast({
         title: "Починка выполнена",
-        description: parts.length ? parts.join(", ") : "Изменений не потребовалось",
+        description: result.quantitiesFixed
+          ? `Остатков приведено к журналу: ${result.quantitiesFixed}`
+          : "Изменений не потребовалось",
       });
       setReport(await checkIntegrity());
     } catch (error) {
@@ -80,7 +77,7 @@ export const IntegrityCard = () => {
             <Stethoscope className="h-4 w-4" />
             Целостность данных
           </CardTitle>
-          <CardDescription>Сверка остатков с местами хранения</CardDescription>
+          <CardDescription>Сверка остатков с журналом операций</CardDescription>
         </CardHeader>
         <CardContent className="p-4 pt-0 space-y-3">
           <div className="flex gap-2">
@@ -108,42 +105,35 @@ export const IntegrityCard = () => {
 
           {report && problemCount > 0 && (
             <div className="space-y-2 text-sm">
-              {report.quantityMismatches.length > 0 && (
+              {report.stockDrift.length > 0 && (
                 <div>
                   <p className="flex items-center gap-2 font-medium">
                     <AlertTriangle className="h-4 w-4 text-amber-500" />
-                    Остаток не сходится с местами хранения
+                    Остаток не сходится с журналом операций
                   </p>
                   <div className="mt-1 space-y-0.5">
-                    {report.quantityMismatches.map((m) => (
-                      <p key={m.id} className="text-xs text-muted-foreground">
-                        «{m.name}»: общий {m.total}, по местам {m.byLocation}
+                    {report.stockDrift.map((d) => (
+                      <p
+                        key={`${d.itemId}-${d.locationId}`}
+                        className="text-xs text-muted-foreground"
+                      >
+                        «{d.itemName}» на «{d.location}»: остаток {d.stockQuantity}, по журналу{" "}
+                        {d.journalQuantity}
                       </p>
                     ))}
                   </div>
                 </div>
               )}
 
-              {report.missingLocations.length > 0 && (
-                <div>
-                  <p className="flex items-center gap-2 font-medium">
-                    <AlertTriangle className="h-4 w-4 text-amber-500" />
-                    Остаток без места хранения
-                  </p>
-                  <div className="mt-1 space-y-0.5">
-                    {report.missingLocations.map((m) => (
-                      <p key={m.id} className="text-xs text-muted-foreground">
-                        «{m.name}»: {m.quantity} шт.
-                      </p>
-                    ))}
-                  </div>
-                </div>
+              {report.negativeStock > 0 && (
+                <p className="text-xs text-destructive">
+                  Отрицательных остатков: <Badge variant="outline">{report.negativeStock}</Badge>
+                </p>
               )}
 
-              {report.duplicateGroupComponents.length > 0 && (
+              {report.orphanOperations > 0 && (
                 <p className="text-xs text-muted-foreground">
-                  Группы-дубли у товаров:{" "}
-                  <Badge variant="outline">{report.duplicateGroupComponents.length}</Badge>
+                  Операций без строк: <Badge variant="outline">{report.orphanOperations}</Badge>
                 </p>
               )}
 
@@ -163,10 +153,9 @@ export const IntegrityCard = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Выровнять учёт?</AlertDialogTitle>
             <AlertDialogDescription>
-              Общий остаток товара будет приведён к сумме по местам хранения — источником
-              правды считается распределение по складам. Товару с остатком, но без мест
-              хранения, будет заведено место по его текущему расположению: количество не
-              обнуляется. Группы-дубли схлопнутся с суммированием количества.
+              Остатки будут приведены к сумме по журналу операций. Первичен именно журнал:
+              каждая его строка объясняет, почему количество изменилось, тогда как подгонка
+              журнала под остатки означала бы придумывание событий, которых не было.
               <br />
               <br />
               Перед починкой имеет смысл создать резервную копию.

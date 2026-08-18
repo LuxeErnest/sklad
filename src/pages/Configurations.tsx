@@ -234,8 +234,6 @@ const Configurations = () => {
         name: data.name,
         description: data.description || "",
         components: componentsPayload,
-        totalValue,
-        totalItems,
       });
 
       // Reload configurations
