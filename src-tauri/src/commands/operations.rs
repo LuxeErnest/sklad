@@ -186,7 +186,11 @@ fn name_of(tx: &Transaction, table: &str, id: i64) -> DbResult<String> {
 
 #[tauri::command]
 pub fn register_operation(input: OperationInput, db: State<'_, Db>) -> DbResult<i64> {
-    db.transaction(|tx| register(tx, &input))
+    register_on(&db, &input)
+}
+
+pub fn register_on(db: &Db, input: &OperationInput) -> DbResult<i64> {
+    db.transaction(|tx| register(tx, input))
 }
 
 const LINE_QUERY: &str = "

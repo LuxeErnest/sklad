@@ -93,6 +93,10 @@ pub struct IntegrityReport {
 /// журнал и остатки заполнялись независимо и расходились штатно.
 #[tauri::command]
 pub fn check_integrity(db: State<'_, Db>) -> DbResult<IntegrityReport> {
+    check_integrity_on(&db)
+}
+
+pub fn check_integrity_on(db: &Db) -> DbResult<IntegrityReport> {
     db.with(|conn| {
         let mut stmt = conn.prepare(
             "WITH journal AS (

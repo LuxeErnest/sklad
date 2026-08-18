@@ -143,6 +143,10 @@ fn load_items(conn: &rusqlite::Connection, archived: bool) -> DbResult<Vec<ItemV
 
 #[tauri::command]
 pub fn list_items(db: State<'_, Db>) -> DbResult<Vec<ItemView>> {
+    list_items_on(&db)
+}
+
+pub fn list_items_on(db: &Db) -> DbResult<Vec<ItemView>> {
     db.with(|conn| load_items(conn, false))
 }
 
@@ -153,6 +157,10 @@ pub fn list_archived_items(db: State<'_, Db>) -> DbResult<Vec<ItemView>> {
 
 #[tauri::command]
 pub fn save_item(input: ItemInput, db: State<'_, Db>) -> DbResult<i64> {
+    save_item_on(&db, input)
+}
+
+pub fn save_item_on(db: &Db, input: ItemInput) -> DbResult<i64> {
     let name = input.name.trim().to_string();
     if name.is_empty() {
         return Err(DbError("Название изделия обязательно".to_string()));
@@ -371,6 +379,10 @@ pub fn list_locations(db: State<'_, Db>) -> DbResult<Vec<LocationView>> {
 
 #[tauri::command]
 pub fn create_location(name: String, db: State<'_, Db>) -> DbResult<i64> {
+    create_location_on(&db, name)
+}
+
+pub fn create_location_on(db: &Db, name: String) -> DbResult<i64> {
     let name = name.trim().to_string();
     if name.is_empty() {
         return Err(DbError("Название места хранения обязательно".to_string()));
@@ -403,6 +415,10 @@ pub fn rename_location(location_id: i64, name: String, db: State<'_, Db>) -> DbR
 /// человек, поэтому объединение — ручное действие.
 #[tauri::command]
 pub fn merge_locations(source_id: i64, target_id: i64, db: State<'_, Db>) -> DbResult<()> {
+    merge_locations_on(&db, source_id, target_id)
+}
+
+pub fn merge_locations_on(db: &Db, source_id: i64, target_id: i64) -> DbResult<()> {
     if source_id == target_id {
         return Err(DbError("Выбрано одно и то же место хранения".to_string()));
     }

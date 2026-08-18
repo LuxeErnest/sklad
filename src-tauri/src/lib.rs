@@ -1,6 +1,11 @@
 mod commands;
 mod db;
 
+#[cfg(test)]
+mod test_support;
+#[cfg(test)]
+mod tests;
+
 use commands::{catalog, configurations, database, documents, operations, stats};
 use db::Db;
 use tauri::Manager;

@@ -75,20 +75,35 @@ impl Db {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let conn = Connection::open(path)?;
+        // journal_mode = WAL применим только к базе в файле: для базы в памяти
+        // журнал не нужен и SQLite такую настройку не принимает.
+        Self::from_connection(Connection::open(path)?, path.to_path_buf(), true)
+    }
 
+    /// База в памяти — для тестов.
+    ///
+    /// Каждый вызов даёт отдельную чистую базу с применёнными миграциями,
+    /// ничего не остаётся на диске и тесты не мешают друг другу.
+    pub fn open_in_memory() -> DbResult<Self> {
+        Self::from_connection(Connection::open_in_memory()?, PathBuf::from(":memory:"), false)
+    }
+
+    fn from_connection(conn: Connection, path: PathBuf, wal: bool) -> DbResult<Self> {
         // foreign_keys включаем явно: в SQLite они по умолчанию выключены.
-        // journal_mode хранится в файле базы, остальное — свойства соединения.
         conn.execute_batch(
             "PRAGMA foreign_keys = ON;
-             PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;
              PRAGMA busy_timeout = 5000;",
         )?;
+        if wal {
+            // Настройка хранится в самом файле базы, поэтому достаточно
+            // выставить её один раз при открытии.
+            conn.execute_batch("PRAGMA journal_mode = WAL;")?;
+        }
 
         let db = Self {
             conn: Mutex::new(conn),
-            path: path.to_path_buf(),
+            path,
         };
         db.migrate()?;
         Ok(db)

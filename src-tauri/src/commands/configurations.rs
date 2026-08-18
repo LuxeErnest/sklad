@@ -61,6 +61,10 @@ pub struct ConfigurationInput {
 
 #[tauri::command]
 pub fn list_configurations(db: State<'_, Db>) -> DbResult<Vec<ConfigurationView>> {
+    list(&db)
+}
+
+pub fn list(db: &Db) -> DbResult<Vec<ConfigurationView>> {
     db.with(|conn| {
         let mut stmt = conn.prepare(
             "SELECT c.id, c.name, c.description, c.result_item_id, ri.name, c.created_at,
@@ -149,6 +153,10 @@ pub fn list_configurations(db: State<'_, Db>) -> DbResult<Vec<ConfigurationView>
 
 #[tauri::command]
 pub fn save_configuration(input: ConfigurationInput, db: State<'_, Db>) -> DbResult<i64> {
+    save(&db, input)
+}
+
+pub fn save(db: &Db, input: ConfigurationInput) -> DbResult<i64> {
     let name = input.name.trim().to_string();
     if name.is_empty() {
         return Err(DbError("Название конфигурации обязательно".to_string()));
@@ -332,6 +340,10 @@ pub fn assemble_configuration(
     location_id: i64,
     db: State<'_, Db>,
 ) -> DbResult<i64> {
+    assemble(&db, configuration_id, quantity, location_id)
+}
+
+pub fn assemble(db: &Db, configuration_id: i64, quantity: i64, location_id: i64) -> DbResult<i64> {
     if quantity <= 0 {
         return Err(DbError("Количество должно быть больше нуля".to_string()));
     }
@@ -400,6 +412,10 @@ pub fn disassemble_configuration(
     location_id: i64,
     db: State<'_, Db>,
 ) -> DbResult<i64> {
+    disassemble(&db, configuration_id, quantity, location_id)
+}
+
+pub fn disassemble(db: &Db, configuration_id: i64, quantity: i64, location_id: i64) -> DbResult<i64> {
     if quantity <= 0 {
         return Err(DbError("Количество должно быть больше нуля".to_string()));
     }
