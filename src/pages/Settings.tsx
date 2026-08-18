@@ -1,6 +1,6 @@
 import Sidebar from "@/components/layout/Sidebar";
 import TopBar from "@/components/layout/TopBar";
-import BackgroundGlow from "@/components/common/BackgroundGlow";
+import UniversalBackground from "@/components/UniversalBackground";
 import Seo from "@/components/seo/Seo";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,10 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Settings, Database, Bell, Shield, Palette, Save } from "lucide-react";
 import { useState } from "react";
+import { StatusCard } from "@/components/database/StatusCard";
+import { ConnectionPoolCard } from "@/components/database/ConnectionPoolCard";
+import { CacheCard } from "@/components/database/CacheCard";
+import { BackupCard } from "@/components/database/BackupCard";
 
 const SettingsPage = () => {
   const [search, setSearch] = useState("");
@@ -33,7 +37,7 @@ const SettingsPage = () => {
       />
 
       <div className="absolute inset-0 -z-10">
-        <BackgroundGlow />
+        <UniversalBackground />
       </div>
 
       <div className="grid grid-cols-[auto_1fr]">
@@ -106,49 +110,6 @@ const SettingsPage = () => {
                 </CardContent>
               </Card>
 
-              {/* Настройки базы данных */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Database className="h-5 w-5" />
-                    База данных
-                  </CardTitle>
-                  <CardDescription>Настройки подключения к базе данных</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="db-host">Хост базы данных</Label>
-                    <Input
-                      id="db-host"
-                      placeholder="localhost"
-                      defaultValue="localhost"
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="db-port">Порт</Label>
-                    <Input
-                      id="db-port"
-                      placeholder="5432"
-                      defaultValue="5432"
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="db-name">Имя базы данных</Label>
-                    <Input
-                      id="db-name"
-                      placeholder="warehouse_db"
-                      defaultValue="warehouse_db"
-                    />
-                  </div>
-                  
-                  <Button className="w-full">
-                    <Save className="h-4 w-4 mr-2" />
-                    Сохранить настройки БД
-                  </Button>
-                </CardContent>
-              </Card>
 
               {/* Настройки безопасности */}
               <Card>
@@ -248,12 +209,99 @@ const SettingsPage = () => {
               </Card>
             </div>
 
+            {/* Database Management */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Database className="h-5 w-5" />
+                  Управление базой данных
+                </CardTitle>
+                <CardDescription>
+                  База данных: быстрые действия и настройки
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Grid 3x3 согласно макету */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {/* 1. Статус */}
+                  <StatusCard />
+
+                  {/* 2. Пул соединений */}
+                  <ConnectionPoolCard />
+
+                  {/* 3. Кэш */}
+                  <CacheCard />
+
+                  {/* 4. Резервные копии */}
+                  <BackupCard />
+
+                  {/* 7. Изменить местоположение БД */}
+                  <Card className="border-dashed">
+                    <CardHeader className="p-4 pb-2">
+                      <CardTitle className="text-base">Изменить местоположение БД</CardTitle>
+                      <CardDescription>Переместить SQLite файл</CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-4 pt-0 space-y-2">
+                      <Button size="sm" className="w-full" onClick={async ()=>{
+                        const path = prompt('Укажите новую папку для базы (полный путь)');
+                        if (path && typeof path === 'string') {
+                          const { dbConfig } = await import('@/lib/db-config');
+                          dbConfig.updateConfig({ path: `${path}/app.db`, type: 'sqlite' });
+                          alert('Местоположение базы обновлено. Перезапустите приложение.');
+                        }
+                      }}>Выбрать папку</Button>
+                    </CardContent>
+                  </Card>
+
+                  {/* 8. Внешняя база (сервер) */}
+                  <Card className="border-dashed">
+                    <CardHeader className="p-4 pb-2">
+                      <CardTitle className="text-base">Внешняя база (сервер)</CardTitle>
+                      <CardDescription>Указать адрес подключения</CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-4 pt-0 space-y-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="ext-db" className="text-xs">Строка подключения</Label>
+                        <Input 
+                          id="ext-db" 
+                          placeholder="postgres://user:pass@host:5432/dbname" 
+                          className="h-8 text-xs"
+                          onBlur={async (e)=>{
+                            const { dbConfig } = await import('@/lib/db-config');
+                            dbConfig.updateConfig({ type: 'external', connectionString: e.target.value });
+                            alert('Внешняя база сохранена (не активируется автоматически).');
+                          }} 
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* 9. Дополнить базу */}
+                  <Card className="border-dashed">
+                    <CardHeader className="p-4 pb-2">
+                      <CardTitle className="text-base">Дополнить базу</CardTitle>
+                      <CardDescription>Импортировать в текущую</CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-4 pt-0 space-y-2">
+                      <Button size="sm" className="w-full" variant="outline" onClick={async ()=>{
+                        const file = prompt('Укажите путь к SQLite файлу для объединения (.db/.sqlite)');
+                        if (!file || typeof file !== 'string') return;
+                        const { invoke } = await import('@tauri-apps/api/core');
+                        await invoke('merge_sqlite_into_current', { sourcePath: file });
+                        alert('Данные добавлены.');
+                      }}>Прикрепить файл SQLite</Button>
+                    </CardContent>
+                  </Card>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Кнопки действий */}
             <div className="flex justify-end gap-4">
-              <Button variant="outline">
+              <Button variant="outline" className="transition-all duration-200 hover:scale-105">
                 Сбросить настройки
               </Button>
-              <Button>
+              <Button className="transition-all duration-200 hover:scale-105">
                 <Save className="h-4 w-4 mr-2" />
                 Сохранить все настройки
               </Button>
