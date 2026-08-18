@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { InventoryItem } from "@/components/inventory/InventoryTable";
 import { initDb, getComponents, getComponentTagsMap, getCategoriesTree, getReservedQuantities, getTotalAssembledCount, getConfigurations, getAssembledCounts } from "@/lib/db";
 import type { CategoryNode } from "@/lib/db";
@@ -55,6 +56,8 @@ function flattenCategoryNames(nodes: CategoryNode[]): string[] {
 }
 
 export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [categoryTree, setCategoryTree] = useState<CategoryNode[]>([]);
@@ -137,50 +140,39 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     return items.find(item => item.barcode && item.barcode.toLowerCase() === barcode.toLowerCase());
   }, [items]);
 
-  // Navigation helpers
+  // Переходы внутри приложения.
+  //
+  // Раньше здесь был window.location.href — полная перезагрузка страницы с
+  // потерей всего состояния React и повторной загрузкой данных. Так было
+  // сделано вынужденно: контекст стоял выше роутера, и useNavigate был
+  // недоступен. Порядок провайдеров исправлен, поэтому переходы стали обычной
+  // сменой маршрута.
   const navigateToItem = useCallback((itemId: number) => {
-    // Navigate to main page and select item
-    window.location.href = `/#item-${itemId}`;
-    // Dispatch event to select item
-    setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('selectItem', { detail: { itemId } }));
-    }, 100);
-  }, []);
+    navigate("/");
+    // Выбор строки происходит уже после отрисовки списка.
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent("selectItem", { detail: { itemId } }));
+    });
+  }, [navigate]);
 
   const navigateToEdit = useCallback((itemId?: number) => {
-    if (itemId) {
-      window.location.href = `/edit?itemId=${itemId}`;
-    } else {
-      window.location.href = '/edit';
-    }
-  }, []);
+    navigate(itemId ? `/edit?itemId=${itemId}` : "/edit");
+  }, [navigate]);
 
   const navigateToAdd = useCallback(() => {
-    if (window.location.pathname === '/') {
-      window.dispatchEvent(new CustomEvent('openAddDialog'));
-    } else {
-      window.location.href = '/';
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('openAddDialog'));
-      }, 100);
-    }
-  }, []);
+    if (location.pathname !== "/") navigate("/");
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent("openAddDialog"));
+    });
+  }, [navigate, location.pathname]);
 
   const navigateToDocuments = useCallback((itemId?: number) => {
-    if (itemId) {
-      window.location.href = `/documents?itemId=${itemId}`;
-    } else {
-      window.location.href = '/documents';
-    }
-  }, []);
+    navigate(itemId ? `/documents?itemId=${itemId}` : "/documents");
+  }, [navigate]);
 
   const navigateToConfigurations = useCallback((configId?: number) => {
-    if (configId) {
-      window.location.href = `/configurations?configId=${configId}`;
-    } else {
-      window.location.href = '/configurations';
-    }
-  }, []);
+    navigate(configId ? `/configurations?configId=${configId}` : "/configurations");
+  }, [navigate]);
 
   // Initial load
   useEffect(() => {

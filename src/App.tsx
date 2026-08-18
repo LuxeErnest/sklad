@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { AppProvider } from "@/contexts/AppContext";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
@@ -34,10 +34,20 @@ const App = () => {
       <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
         <QueryClientProvider client={queryClient}>
           <TooltipProvider>
-            <AppProvider>
-              <Toaster />
-              <Sonner />
-              <BrowserRouter>
+            {/*
+              Роутер стоит выше AppProvider намеренно. Раньше было наоборот, и
+              из-за этого внутри контекста был недоступен useNavigate — переходы
+              приходилось делать через window.location.href, то есть полной
+              перезагрузкой страницы с потерей всего состояния.
+
+              HashRouter, а не BrowserRouter: в собранном приложении страницы
+              отдаёт не сервер, а протокол Tauri, и переход по обычному пути
+              при перезагрузке упирается в отсутствие такого файла.
+            */}
+            <HashRouter>
+              <AppProvider>
+                <Toaster />
+                <Sonner />
                 <Routes>
                   <Route path="/" element={<Index />} />
                   <Route path="/calculator" element={<Calculator />} />
@@ -50,8 +60,8 @@ const App = () => {
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>
-              </BrowserRouter>
-            </AppProvider>
+              </AppProvider>
+            </HashRouter>
           </TooltipProvider>
         </QueryClientProvider>
       </ThemeProvider>

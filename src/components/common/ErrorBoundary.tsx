@@ -67,15 +67,19 @@ export class ErrorBoundary extends Component<Props, State> {
     this.setState({ errorInfo });
   }
 
+  // Маршрут живёт в хеше (HashRouter), поэтому путь берётся оттуда, а не из
+  // pathname: в собранном приложении pathname указывает на файл, а не на экран.
+  private static currentRoute() {
+    return window.location.hash.replace(/^#/, '') || '/';
+  }
+
   componentDidMount() {
-    // Сохраняем текущий путь при монтировании
-    sessionStorage.setItem('previousPath', window.location.pathname);
+    sessionStorage.setItem('previousPath', ErrorBoundary.currentRoute());
   }
 
   componentDidUpdate() {
-    // Обновляем предыдущий путь при изменении маршрута
     if (!this.state.hasError) {
-      sessionStorage.setItem('previousPath', window.location.pathname);
+      sessionStorage.setItem('previousPath', ErrorBoundary.currentRoute());
     }
   }
 
@@ -89,14 +93,28 @@ export class ErrorBoundary extends Component<Props, State> {
     });
   };
 
+  /**
+   * Возврат без перезагрузки приложения.
+   *
+   * Раньше здесь присваивался location.href, то есть страница загружалась
+   * заново со всеми потерями. Смена хеша меняет только маршрут, а сброс
+   * состояния снимает экран ошибки.
+   */
   private handleGoBack = () => {
-    if (this.state.previousPath && this.state.previousPath !== window.location.pathname) {
-      window.location.href = this.state.previousPath;
+    const previous = this.state.previousPath;
+    if (previous && previous !== ErrorBoundary.currentRoute()) {
+      window.location.hash = previous.startsWith('#') ? previous : `#${previous}`;
     } else if (window.history.length > 1) {
       window.history.back();
     } else {
-      window.location.href = '/';
+      window.location.hash = '#/';
     }
+    this.handleReset();
+  };
+
+  private handleGoHome = () => {
+    window.location.hash = '#/';
+    this.handleReset();
   };
 
   private handleCopyError = async () => {
@@ -221,7 +239,7 @@ export class ErrorBoundary extends Component<Props, State> {
                   Копировать ошибку
                 </Button>
                 <Button 
-                  onClick={() => window.location.href = "/"}
+                  onClick={this.handleGoHome}
                   className="flex-1 min-w-[140px]"
                 >
                   <Home className="h-4 w-4 mr-2" />
