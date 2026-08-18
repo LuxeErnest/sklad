@@ -270,6 +270,16 @@ fn run_import(tx: &Transaction, extracted: &[ExtractedDocument]) -> DbResult<Imp
     // --- Документы: метаданные к уже разложенным файлам ---
     report.documents = import_documents(tx, extracted)?;
 
+    // --- Сверка журнала с перенесёнными остатками ---
+    let corrected = reconcile_journal_with_stock(tx)?;
+    if corrected > 0 {
+        report.notes.push(format!(
+            "Добавлена корректировка на {} позиций: перенесённые события не сходились \
+             с остатками, и без неё сверка показывала бы расхождение по каждой строке",
+            corrected
+        ));
+    }
+
     if report.operations > 0 {
         report.notes.push(
             "События журнала перенесены как исторические: остаток они не меняют, \
@@ -307,6 +317,90 @@ fn run_import(tx: &Transaction, extracted: &[ExtractedDocument]) -> DbResult<Imp
     }
 
     Ok(report)
+}
+
+/// Дописывает одну корректировку, после которой сумма по журналу совпадает
+/// с перенесёнными остатками.
+///
+/// Перенесённые события — это пересказ старой истории, и сойтись с остатками
+/// они не могут: в исходной базе журнал и остатки велись независимо и штатно
+/// расходились. Остатки при этом достоверны, потому что именно их показывало
+/// приложение. Поэтому за истину принимаются остатки, а разница оформляется
+/// явной операцией, а не замалчивается.
+///
+/// Строки пишутся напрямую, без применения к `stock`: остатки уже перенесены,
+/// повторно двигать их не нужно.
+fn reconcile_journal_with_stock(tx: &Transaction) -> DbResult<usize> {
+    let differences: i64 = tx.query_row(
+        "WITH journal AS (
+             SELECT item_id, location_id, SUM(delta) AS quantity FROM (
+                 SELECT item_id, to_location_id   AS location_id,  quantity AS delta
+                   FROM operation_lines WHERE to_location_id IS NOT NULL
+                 UNION ALL
+                 SELECT item_id, from_location_id AS location_id, -quantity AS delta
+                   FROM operation_lines WHERE from_location_id IS NOT NULL
+             ) GROUP BY item_id, location_id
+         ),
+         keys AS (
+             SELECT item_id, location_id FROM stock
+             UNION
+             SELECT item_id, location_id FROM journal
+         )
+         SELECT COUNT(*) FROM keys k
+           LEFT JOIN stock   s ON s.item_id = k.item_id AND s.location_id = k.location_id
+           LEFT JOIN journal j ON j.item_id = k.item_id AND j.location_id = k.location_id
+          WHERE COALESCE(s.quantity, 0) != COALESCE(j.quantity, 0)",
+        [],
+        |row| row.get(0),
+    )?;
+
+    if differences == 0 {
+        return Ok(0);
+    }
+
+    tx.execute(
+        "INSERT INTO operations (kind, performed_at, performed_by, note)
+         VALUES ('correction', ?1, 'Импорт',
+                 'Приведение журнала в соответствие с перенесёнными остатками')",
+        params![crate::now_iso()],
+    )?;
+    let operation_id = tx.last_insert_rowid();
+
+    // Положительная разница — приход на место, отрицательная — уход с него.
+    let inserted = tx.execute(
+        "WITH journal AS (
+             SELECT item_id, location_id, SUM(delta) AS quantity FROM (
+                 SELECT item_id, to_location_id   AS location_id,  quantity AS delta
+                   FROM operation_lines WHERE to_location_id IS NOT NULL
+                 UNION ALL
+                 SELECT item_id, from_location_id AS location_id, -quantity AS delta
+                   FROM operation_lines WHERE from_location_id IS NOT NULL
+             ) GROUP BY item_id, location_id
+         ),
+         keys AS (
+             SELECT item_id, location_id FROM stock
+             UNION
+             SELECT item_id, location_id FROM journal
+         ),
+         diff AS (
+             SELECT k.item_id, k.location_id,
+                    COALESCE(s.quantity, 0) - COALESCE(j.quantity, 0) AS delta
+               FROM keys k
+               LEFT JOIN stock   s ON s.item_id = k.item_id AND s.location_id = k.location_id
+               LEFT JOIN journal j ON j.item_id = k.item_id AND j.location_id = k.location_id
+              WHERE COALESCE(s.quantity, 0) != COALESCE(j.quantity, 0)
+         )
+         INSERT INTO operation_lines
+             (operation_id, item_id, from_location_id, to_location_id, quantity)
+         SELECT ?1, item_id,
+                CASE WHEN delta < 0 THEN location_id END,
+                CASE WHEN delta > 0 THEN location_id END,
+                ABS(delta)
+           FROM diff",
+        params![operation_id],
+    )?;
+
+    Ok(inserted)
 }
 
 fn import_paths(tx: &Transaction) -> DbResult<()> {

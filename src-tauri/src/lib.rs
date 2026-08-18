@@ -1,10 +1,7 @@
 mod commands;
 mod db;
 
-use commands::database::{
-  create_backup, get_db_path, list_backups, prepare_backup_path, record_backup, restart_app,
-  restore_db_backup,
-};
+use commands::{catalog, configurations, database, documents, operations, stats};
 use db::Db;
 use tauri::Manager;
 
@@ -17,13 +14,60 @@ pub fn now_iso() -> String {
 pub fn run() {
   tauri::Builder::default()
     .invoke_handler(tauri::generate_handler![
-      get_db_path,
-      create_backup,
-      prepare_backup_path,
-      record_backup,
-      list_backups,
-      restore_db_backup,
-      restart_app
+      // Обслуживание базы
+      database::get_db_path,
+      database::create_backup,
+      database::prepare_backup_path,
+      database::record_backup,
+      database::list_backups,
+      database::restore_db_backup,
+      database::restart_app,
+      // Номенклатура
+      catalog::list_items,
+      catalog::list_archived_items,
+      catalog::save_item,
+      catalog::archive_item,
+      catalog::restore_item,
+      catalog::delete_item,
+      catalog::item_reference_counts,
+      // Места хранения
+      catalog::list_locations,
+      catalog::create_location,
+      catalog::rename_location,
+      catalog::merge_locations,
+      // Категории и теги
+      catalog::list_categories,
+      catalog::create_category,
+      catalog::update_category,
+      catalog::delete_category,
+      catalog::list_tags,
+      catalog::create_tag,
+      catalog::update_tag,
+      catalog::delete_tag,
+      catalog::set_item_tags,
+      catalog::item_tag_ids,
+      // Журнал операций
+      operations::register_operation,
+      operations::item_history,
+      operations::location_journal,
+      operations::list_operations,
+      // Конфигурации
+      configurations::list_configurations,
+      configurations::save_configuration,
+      configurations::delete_configuration,
+      configurations::assemble_configuration,
+      configurations::disassemble_configuration,
+      // Документы
+      documents::list_documents,
+      documents::add_document,
+      documents::set_document_items,
+      documents::delete_document,
+      documents::read_document,
+      documents::item_documents,
+      // Сводка и целостность
+      stats::warehouse_statistics,
+      stats::check_integrity,
+      stats::repair_integrity
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {
