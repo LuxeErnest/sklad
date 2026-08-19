@@ -22,7 +22,6 @@ export default defineConfig(() => ({
         // библиотеки вынесены отдельно, чтобы не пересобираться вместе с кодом.
         manualChunks: {
           react: ["react", "react-dom", "react-router-dom"],
-          charts: ["recharts"],
           spreadsheet: ["xlsx"],
         },
       },
