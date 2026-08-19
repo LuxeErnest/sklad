@@ -1,7 +1,14 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": ["src/main.tsx", "scripts/*.mjs"],
-  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.mjs"],
-  "ignore": ["src-tauri/**", "dist/**"],
-  "ignoreDependencies": ["tailwindcss-animate", "@tailwindcss/typography"]
+  "entry": [
+    "src/main.tsx",
+    "scripts/*.mjs"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "scripts/**/*.mjs"
+  ],
+  "ignoreDependencies": [
+    "tailwindcss-animate"
+  ]
 }
