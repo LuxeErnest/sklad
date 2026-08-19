@@ -9,6 +9,7 @@ use crate::commands::catalog;
 use crate::commands::configurations::{self, ConfigurationComponentInput, ConfigurationInput};
 use crate::commands::operations::register_on;
 use crate::commands::stats::check_integrity_on;
+use crate::db::ids::{ConfigurationId, ItemId, Quantity};
 use crate::test_support::*;
 
 // ---------- Схема и миграции ----------
@@ -169,7 +170,9 @@ fn журнал_сходится_с_остатками_после_цепочки
 
 // ---------- Конфигурации ----------
 
-fn конфигурация(db: &crate::db::Db, компоненты: Vec<(i64, i64)>) -> i64 {
+fn конфигурация(
+    db: &crate::db::Db, компоненты: Vec<(ItemId, i64)>
+) -> ConfigurationId {
     configurations::save(
         db,
         ConfigurationInput {
@@ -195,7 +198,7 @@ fn сборка_списывает_компоненты_и_приходует_и
     receive(&db, гайка, l, 20);
 
     let cfg = конфигурация(&db, vec![(болт, 1), (гайка, 2)]);
-    configurations::assemble(&db, cfg, 3, l).unwrap();
+    configurations::assemble(&db, cfg, Quantity(3), l).unwrap();
 
     assert_eq!(stock_at(&db, болт, l), 7, "на изделие ушло 3 болта");
     assert_eq!(stock_at(&db, гайка, l), 14, "и 6 гаек");
@@ -220,7 +223,7 @@ fn сборка_при_нехватке_одного_компонента_не_�
     receive(&db, гайка, l, 1);
 
     let cfg = конфигурация(&db, vec![(болт, 1), (гайка, 2)]);
-    let result = configurations::assemble(&db, cfg, 5, l);
+    let result = configurations::assemble(&db, cfg, Quantity(5), l);
 
     assert!(result.is_err(), "гаек не хватает — сборка невозможна");
     assert_eq!(
@@ -239,10 +242,10 @@ fn разборка_возвращает_компоненты() {
     receive(&db, болт, l, 10);
 
     let cfg = конфигурация(&db, vec![(болт, 2)]);
-    configurations::assemble(&db, cfg, 3, l).unwrap();
+    configurations::assemble(&db, cfg, Quantity(3), l).unwrap();
     assert_eq!(stock_at(&db, болт, l), 4);
 
-    configurations::disassemble(&db, cfg, 2, l).unwrap();
+    configurations::disassemble(&db, cfg, Quantity(2), l).unwrap();
     assert_eq!(
         stock_at(&db, болт, l),
         8,
@@ -268,7 +271,7 @@ fn сборка_берёт_компоненты_с_нескольких_скла
     receive(&db, болт, b, 4);
 
     let cfg = конфигурация(&db, vec![(болт, 5)]);
-    configurations::assemble(&db, cfg, 1, a).unwrap();
+    configurations::assemble(&db, cfg, Quantity(1), a).unwrap();
 
     assert_eq!(stock_total(&db, болт), 2, "израсходовано 5 из 7");
     assert!(check_integrity_on(&db).unwrap().stock_drift.is_empty());

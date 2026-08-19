@@ -6,13 +6,14 @@
 
 use crate::commands::catalog::{self, ItemInput};
 use crate::commands::operations::{OperationInput, OperationLineInput};
+use crate::db::ids::{ItemId, LocationId, Quantity};
 use crate::db::Db;
 
 pub fn db() -> Db {
     Db::open_in_memory().expect("база в памяти должна открываться")
 }
 
-pub fn item(db: &Db, name: &str) -> i64 {
+pub fn item(db: &Db, name: &str) -> ItemId {
     catalog::save_item_on(
         db,
         ItemInput {
@@ -28,19 +29,27 @@ pub fn item(db: &Db, name: &str) -> i64 {
             image_path: None,
         },
     )
+    .map(ItemId)
     .expect("позиция должна создаваться")
 }
 
-pub fn location(db: &Db, name: &str) -> i64 {
-    catalog::create_location_on(db, name.to_string()).expect("место хранения должно создаваться")
+pub fn location(db: &Db, name: &str) -> LocationId {
+    catalog::create_location_on(db, name.to_string())
+        .map(LocationId)
+        .expect("место хранения должно создаваться")
 }
 
-pub fn line(item_id: i64, from: Option<i64>, to: Option<i64>, quantity: i64) -> OperationLineInput {
+pub fn line(
+    item_id: ItemId,
+    from: Option<LocationId>,
+    to: Option<LocationId>,
+    quantity: i64,
+) -> OperationLineInput {
     OperationLineInput {
         item_id,
         from_location_id: from,
         to_location_id: to,
-        quantity,
+        quantity: Quantity(quantity),
         unit_price: None,
     }
 }
@@ -56,7 +65,7 @@ pub fn operation(kind: &str, lines: Vec<OperationLineInput>) -> OperationInput {
 }
 
 /// Приходует товар на склад — обычная стартовая точка для теста.
-pub fn receive(db: &Db, item_id: i64, location_id: i64, quantity: i64) {
+pub fn receive(db: &Db, item_id: ItemId, location_id: LocationId, quantity: i64) {
     crate::commands::operations::register_on(
         db,
         &operation(
@@ -68,7 +77,7 @@ pub fn receive(db: &Db, item_id: i64, location_id: i64, quantity: i64) {
 }
 
 /// Остаток позиции на конкретном месте хранения.
-pub fn stock_at(db: &Db, item_id: i64, location_id: i64) -> i64 {
+pub fn stock_at(db: &Db, item_id: ItemId, location_id: LocationId) -> i64 {
     db.with(|conn| {
         Ok(conn
             .query_row(
@@ -82,7 +91,7 @@ pub fn stock_at(db: &Db, item_id: i64, location_id: i64) -> i64 {
 }
 
 /// Суммарный остаток позиции по всем местам хранения.
-pub fn stock_total(db: &Db, item_id: i64) -> i64 {
+pub fn stock_total(db: &Db, item_id: ItemId) -> i64 {
     db.with(|conn| {
         Ok(conn
             .query_row(

@@ -6,6 +6,7 @@
 //! их: остаток при этом не менялся, и склад показывал то, чего уже нет.
 
 use super::operations::{self, OperationInput, OperationLineInput};
+use crate::db::ids::{ConfigurationId, ItemId, LocationId, Quantity};
 use crate::db::{Db, DbError, DbResult};
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
@@ -15,20 +16,20 @@ use tauri::State;
 /// идентификатор, название, описание, результирующая позиция и её название,
 /// дата создания, дата архивирования, количество собранного.
 type ConfigurationRow = (
-    i64,
+    ConfigurationId,
     String,
     Option<String>,
-    i64,
+    ItemId,
     String,
     String,
     Option<String>,
-    i64,
+    Quantity,
 );
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigurationComponent {
-    pub item_id: i64,
+    pub item_id: ItemId,
     pub name: String,
     pub quantity: i64,
     /// Сколько такого компонента сейчас на складах.
@@ -38,10 +39,10 @@ pub struct ConfigurationComponent {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigurationView {
-    pub id: i64,
+    pub id: ConfigurationId,
     pub name: String,
     pub description: Option<String>,
-    pub result_item_id: i64,
+    pub result_item_id: ItemId,
     pub result_item_name: String,
     pub created_at: String,
     pub archived_at: Option<String>,
@@ -56,7 +57,7 @@ pub struct ConfigurationView {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigurationComponentInput {
-    pub item_id: i64,
+    pub item_id: ItemId,
     pub quantity: i64,
 }
 
@@ -64,7 +65,7 @@ pub struct ConfigurationComponentInput {
 #[serde(rename_all = "camelCase")]
 pub struct ConfigurationInput {
     #[serde(default)]
-    pub id: Option<i64>,
+    pub id: Option<ConfigurationId>,
     pub name: String,
     #[serde(default)]
     pub description: Option<String>,
@@ -118,7 +119,7 @@ pub fn list(db: &Db) -> DbResult<Vec<ConfigurationView>> {
                   WHERE ci.configuration_id = ?1
                   ORDER BY i.name COLLATE NOCASE",
             )?;
-            let rows: Vec<(i64, String, i64, i64, f64)> = comp_stmt
+            let rows: Vec<(ItemId, String, Quantity, Quantity, f64)> = comp_stmt
                 .query_map(params![id], |row| {
                     Ok((
                         row.get(0)?,
@@ -134,6 +135,7 @@ pub fn list(db: &Db) -> DbResult<Vec<ConfigurationView>> {
             let mut total_value = 0.0;
             let mut can_assemble = if rows.is_empty() { 0 } else { i64::MAX };
             for (item_id, item_name, quantity, available, price) in rows {
+                let (quantity, available) = (quantity.get(), available.get());
                 total_value += price * quantity as f64;
                 can_assemble = can_assemble.min(available / quantity.max(1));
                 components.push(ConfigurationComponent {
@@ -155,7 +157,7 @@ pub fn list(db: &Db) -> DbResult<Vec<ConfigurationView>> {
                 result_item_name: result_name,
                 created_at,
                 archived_at,
-                assembled,
+                assembled: assembled.get(),
                 can_assemble,
                 components,
                 total_value,
@@ -166,11 +168,14 @@ pub fn list(db: &Db) -> DbResult<Vec<ConfigurationView>> {
 }
 
 #[tauri::command]
-pub fn save_configuration(input: ConfigurationInput, db: State<'_, Db>) -> DbResult<i64> {
+pub fn save_configuration(
+    input: ConfigurationInput,
+    db: State<'_, Db>,
+) -> DbResult<ConfigurationId> {
     save(&db, input)
 }
 
-pub fn save(db: &Db, input: ConfigurationInput) -> DbResult<i64> {
+pub fn save(db: &Db, input: ConfigurationInput) -> DbResult<ConfigurationId> {
     let name = input.name.trim().to_string();
     if name.is_empty() {
         return Err(DbError("Название конфигурации обязательно".to_string()));
@@ -233,7 +238,7 @@ pub fn save(db: &Db, input: ConfigurationInput) -> DbResult<i64> {
                      VALUES (?1, ?2, ?3, ?4)",
                     params![name, input.description, result_item_id, now],
                 )?;
-                tx.last_insert_rowid()
+                ConfigurationId(tx.last_insert_rowid())
             }
         };
 
@@ -303,33 +308,34 @@ pub fn delete_configuration(configuration_id: i64, db: State<'_, Db>) -> DbResul
 /// становится отдельной строкой журнала, поэтому видно, откуда что ушло.
 fn allocate(
     tx: &Transaction,
-    item_id: i64,
-    needed: i64,
-    preferred: Option<i64>,
-) -> DbResult<Vec<(i64, i64)>> {
+    item_id: ItemId,
+    needed: Quantity,
+    preferred: Option<LocationId>,
+) -> DbResult<Vec<(LocationId, Quantity)>> {
     let mut stmt = tx.prepare(
         "SELECT location_id, quantity FROM stock
           WHERE item_id = ?1 AND quantity > 0
           ORDER BY (location_id = ?2) DESC, quantity DESC",
     )?;
-    let rows: Vec<(i64, i64)> = stmt
-        .query_map(params![item_id, preferred.unwrap_or(-1)], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })?
+    let rows: Vec<(LocationId, Quantity)> = stmt
+        .query_map(
+            params![item_id, preferred.unwrap_or(LocationId(-1))],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?
         .collect::<rusqlite::Result<_>>()?;
 
     let mut remaining = needed;
     let mut plan = Vec::new();
     for (location_id, available) in rows {
-        if remaining == 0 {
+        if !remaining.is_positive() {
             break;
         }
         let take = remaining.min(available);
         plan.push((location_id, take));
-        remaining -= take;
+        remaining = remaining - take;
     }
 
-    if remaining > 0 {
+    if remaining.is_positive() {
         let name: String = tx
             .query_row(
                 "SELECT name FROM items WHERE id = ?1",
@@ -349,20 +355,25 @@ fn allocate(
 /// Сборка: компоненты списываются со складов, готовое изделие приходуется.
 #[tauri::command]
 pub fn assemble_configuration(
-    configuration_id: i64,
-    quantity: i64,
-    location_id: i64,
+    configuration_id: ConfigurationId,
+    quantity: Quantity,
+    location_id: LocationId,
     db: State<'_, Db>,
 ) -> DbResult<i64> {
     assemble(&db, configuration_id, quantity, location_id)
 }
 
-pub fn assemble(db: &Db, configuration_id: i64, quantity: i64, location_id: i64) -> DbResult<i64> {
-    if quantity <= 0 {
+pub fn assemble(
+    db: &Db,
+    configuration_id: ConfigurationId,
+    quantity: Quantity,
+    location_id: LocationId,
+) -> DbResult<i64> {
+    if !quantity.is_positive() {
         return Err(DbError("Количество должно быть больше нуля".to_string()));
     }
     db.transaction(|tx| {
-        let (result_item_id, name): (i64, String) = tx.query_row(
+        let (result_item_id, name): (ItemId, String) = tx.query_row(
             "SELECT result_item_id, name FROM configurations WHERE id = ?1",
             params![configuration_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
@@ -371,7 +382,7 @@ pub fn assemble(db: &Db, configuration_id: i64, quantity: i64, location_id: i64)
         let mut stmt = tx.prepare(
             "SELECT item_id, quantity FROM configuration_items WHERE configuration_id = ?1",
         )?;
-        let recipe: Vec<(i64, i64)> = stmt
+        let recipe: Vec<(ItemId, Quantity)> = stmt
             .query_map(params![configuration_id], |row| {
                 Ok((row.get(0)?, row.get(1)?))
             })?
@@ -387,7 +398,8 @@ pub fn assemble(db: &Db, configuration_id: i64, quantity: i64, location_id: i64)
 
         let mut lines = Vec::new();
         for (item_id, per_unit) in recipe {
-            for (from, take) in allocate(tx, item_id, per_unit * quantity, Some(location_id))? {
+            for (from, take) in allocate(tx, item_id, per_unit * quantity.get(), Some(location_id))?
+            {
                 lines.push(OperationLineInput {
                     item_id,
                     from_location_id: Some(from),
@@ -421,9 +433,9 @@ pub fn assemble(db: &Db, configuration_id: i64, quantity: i64, location_id: i64)
 /// Разборка: изделие списывается, компоненты возвращаются на склад.
 #[tauri::command]
 pub fn disassemble_configuration(
-    configuration_id: i64,
-    quantity: i64,
-    location_id: i64,
+    configuration_id: ConfigurationId,
+    quantity: Quantity,
+    location_id: LocationId,
     db: State<'_, Db>,
 ) -> DbResult<i64> {
     disassemble(&db, configuration_id, quantity, location_id)
@@ -431,15 +443,15 @@ pub fn disassemble_configuration(
 
 pub fn disassemble(
     db: &Db,
-    configuration_id: i64,
-    quantity: i64,
-    location_id: i64,
+    configuration_id: ConfigurationId,
+    quantity: Quantity,
+    location_id: LocationId,
 ) -> DbResult<i64> {
-    if quantity <= 0 {
+    if !quantity.is_positive() {
         return Err(DbError("Количество должно быть больше нуля".to_string()));
     }
     db.transaction(|tx| {
-        let (result_item_id, name): (i64, String) = tx.query_row(
+        let (result_item_id, name): (ItemId, String) = tx.query_row(
             "SELECT result_item_id, name FROM configurations WHERE id = ?1",
             params![configuration_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
@@ -448,7 +460,7 @@ pub fn disassemble(
         let mut stmt = tx.prepare(
             "SELECT item_id, quantity FROM configuration_items WHERE configuration_id = ?1",
         )?;
-        let recipe: Vec<(i64, i64)> = stmt
+        let recipe: Vec<(ItemId, Quantity)> = stmt
             .query_map(params![configuration_id], |row| {
                 Ok((row.get(0)?, row.get(1)?))
             })?
@@ -470,7 +482,7 @@ pub fn disassemble(
                 item_id,
                 from_location_id: None,
                 to_location_id: Some(location_id),
-                quantity: per_unit * quantity,
+                quantity: per_unit * quantity.get(),
                 unit_price: None,
             });
         }

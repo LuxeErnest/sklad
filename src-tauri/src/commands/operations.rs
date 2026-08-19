@@ -5,6 +5,7 @@
 //! чего в прежней схеме не было: остатки правились из десятка мест, а история
 //! велась отдельно и с ними не сходилась.
 
+use crate::db::ids::{ConfigurationId, ItemId, LocationId, OperationId, Quantity};
 use crate::db::{Db, DbError, DbResult};
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
@@ -13,12 +14,12 @@ use tauri::State;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OperationLineInput {
-    pub item_id: i64,
+    pub item_id: ItemId,
     #[serde(default)]
-    pub from_location_id: Option<i64>,
+    pub from_location_id: Option<LocationId>,
     #[serde(default)]
-    pub to_location_id: Option<i64>,
-    pub quantity: i64,
+    pub to_location_id: Option<LocationId>,
+    pub quantity: Quantity,
     #[serde(default)]
     pub unit_price: Option<f64>,
 }
@@ -32,7 +33,7 @@ pub struct OperationInput {
     #[serde(default)]
     pub note: Option<String>,
     #[serde(default)]
-    pub configuration_id: Option<i64>,
+    pub configuration_id: Option<ConfigurationId>,
     pub lines: Vec<OperationLineInput>,
 }
 
@@ -40,18 +41,18 @@ pub struct OperationInput {
 #[serde(rename_all = "camelCase")]
 pub struct OperationLineView {
     pub id: i64,
-    pub operation_id: i64,
+    pub operation_id: OperationId,
     pub kind: String,
     pub performed_at: String,
     pub performed_by: Option<String>,
     pub note: Option<String>,
-    pub item_id: i64,
+    pub item_id: ItemId,
     pub item_name: String,
-    pub from_location_id: Option<i64>,
+    pub from_location_id: Option<LocationId>,
     pub from_location: Option<String>,
-    pub to_location_id: Option<i64>,
+    pub to_location_id: Option<LocationId>,
     pub to_location: Option<String>,
-    pub quantity: i64,
+    pub quantity: Quantity,
     pub unit_price: Option<f64>,
 }
 
@@ -90,7 +91,7 @@ pub fn register(tx: &Transaction, input: &OperationInput) -> DbResult<i64> {
     let operation_id = tx.last_insert_rowid();
 
     for line in &input.lines {
-        if line.quantity <= 0 {
+        if !line.quantity.is_positive() {
             return Err(DbError(
                 "Количество в строке операции должно быть больше нуля".to_string(),
             ));
@@ -131,19 +132,24 @@ pub fn register(tx: &Transaction, input: &OperationInput) -> DbResult<i64> {
 /// Проверка выполняется до изменения, чтобы сообщение было осмысленным.
 /// `CHECK (quantity >= 0)` в схеме остаётся страховкой на случай, если сюда
 /// когда-нибудь придут в обход этой функции.
-fn take_from(tx: &Transaction, item_id: i64, location_id: i64, quantity: i64) -> DbResult<()> {
-    let available: i64 = tx
+fn take_from(
+    tx: &Transaction,
+    item_id: ItemId,
+    location_id: LocationId,
+    quantity: Quantity,
+) -> DbResult<()> {
+    let available: Quantity = tx
         .query_row(
             "SELECT quantity FROM stock WHERE item_id = ?1 AND location_id = ?2",
             params![item_id, location_id],
             |row| row.get(0),
         )
         .optional()?
-        .unwrap_or(0);
+        .unwrap_or(Quantity::ZERO);
 
     if available < quantity {
-        let item_name = name_of(tx, "items", item_id)?;
-        let location_name = name_of(tx, "locations", location_id)?;
+        let item_name = name_of(tx, "items", item_id.get())?;
+        let location_name = name_of(tx, "locations", location_id.get())?;
         return Err(DbError(format!(
             "Недостаточно «{}» на складе «{}»: есть {}, требуется {}",
             item_name, location_name, available, quantity
@@ -163,7 +169,12 @@ fn take_from(tx: &Transaction, item_id: i64, location_id: i64, quantity: i64) ->
     Ok(())
 }
 
-fn put_to(tx: &Transaction, item_id: i64, location_id: i64, quantity: i64) -> DbResult<()> {
+fn put_to(
+    tx: &Transaction,
+    item_id: ItemId,
+    location_id: LocationId,
+    quantity: Quantity,
+) -> DbResult<()> {
     tx.execute(
         "INSERT INTO stock (item_id, location_id, quantity, updated_at)
          VALUES (?1, ?2, ?3, ?4)
@@ -174,6 +185,10 @@ fn put_to(tx: &Transaction, item_id: i64, location_id: i64, quantity: i64) -> Db
     Ok(())
 }
 
+/// Название записи для сообщения об ошибке.
+///
+/// Принимает уже готовое число: сюда приходят идентификаторы разных видов, и
+/// смысл различать их здесь пропадает — запись только читается по имени.
 fn name_of(tx: &Transaction, table: &str, id: i64) -> DbResult<String> {
     let sql = format!("SELECT name FROM {} WHERE id = ?1", table);
     Ok(tx

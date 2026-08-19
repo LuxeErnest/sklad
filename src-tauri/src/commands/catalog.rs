@@ -1,5 +1,6 @@
 //! Номенклатура и справочники: позиции, места хранения, категории, теги.
 
+use crate::db::ids::LocationId;
 use crate::db::{Db, DbError, DbResult};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -453,11 +454,15 @@ pub fn rename_location(location_id: i64, name: String, db: State<'_, Db>) -> DbR
 /// «sklad», и «skladв». Отличить опечатку от отдельного склада может только
 /// человек, поэтому объединение — ручное действие.
 #[tauri::command]
-pub fn merge_locations(source_id: i64, target_id: i64, db: State<'_, Db>) -> DbResult<()> {
+pub fn merge_locations(
+    source_id: LocationId,
+    target_id: LocationId,
+    db: State<'_, Db>,
+) -> DbResult<()> {
     merge_locations_on(&db, source_id, target_id)
 }
 
-pub fn merge_locations_on(db: &Db, source_id: i64, target_id: i64) -> DbResult<()> {
+pub fn merge_locations_on(db: &Db, source_id: LocationId, target_id: LocationId) -> DbResult<()> {
     if source_id == target_id {
         return Err(DbError("Выбрано одно и то же место хранения".to_string()));
     }

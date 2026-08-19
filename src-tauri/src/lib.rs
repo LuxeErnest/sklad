@@ -33,7 +33,7 @@ pub fn run() {
             catalog::list_archived_items,
             catalog::save_item,
             catalog::set_item_barcode,
-      catalog::archive_item,
+            catalog::archive_item,
             catalog::restore_item,
             catalog::delete_item,
             catalog::item_reference_counts,

@@ -1,3 +1,4 @@
+pub mod ids;
 pub mod legacy;
 pub mod schema;
 
