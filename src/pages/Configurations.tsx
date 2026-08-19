@@ -677,7 +677,7 @@ const Configurations = () => {
               <div className="p-4 border rounded-lg bg-muted/30">
                 <h4 className="font-medium mb-2">Собрано единиц</h4>
                 <div className="text-2xl font-bold text-primary">{assembledCounts[selectedConfiguration.id] ?? 0}</div>
-                <p className="text-xs text-muted-foreground mt-1">Компоненты этих единиц зарезервированы и не отображаются как свободные на складе.</p>
+                <p className="text-xs text-muted-foreground mt-1">Компоненты этих единиц списаны со складов при сборке. Разборка вернёт их обратно.</p>
               </div>
 
               <div>

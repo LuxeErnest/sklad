@@ -40,6 +40,7 @@ const Index = () => {
   const [addingItem, setAddingItem] = useState(false);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string | null>(null);
+  const [location, setLocation] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
 
   const warehouseItems = useMemo((): InventoryItem[] => {
@@ -69,6 +70,18 @@ const Index = () => {
     }));
     return [...components, ...configRows];
   }, [items, assembledConfigurations]);
+
+  // Склады для отбора берутся из остатков: позиция может лежать на нескольких
+  // местах сразу, поэтому список собирается по всем её местам, а не по одному
+  // «основному», который показывает таблица.
+  const locationNames = useMemo(() => {
+    const names = new Set<string>();
+    (items || []).forEach((i) => {
+      (i.locations || []).forEach((l) => l.location && names.add(l.location));
+      if (i.location) names.add(i.location);
+    });
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [items]);
 
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
@@ -187,9 +200,17 @@ const Index = () => {
 
   const categoryFilterNames = category ? categoryNamesWithDescendants(categoryTree, category) : null;
 
-  const summary = selectedItem ? 
-    { name: selectedItem.name, quantity: selectedItem.quantity, location: selectedItem.location, category: selectedItem.category } :
-    { name: "Выбранный продукт", quantity: 85, location: "Склад А-12", category: category ?? "Все" };
+  // Пока строка не выбрана, полоса сводки не показывается вовсе. Раньше здесь
+  // подставлялись выдуманные значения — «85 шт.» и «Склад А-12», — то есть на
+  // главном экране висел остаток несуществующего товара.
+  const summary = selectedItem
+    ? {
+        name: selectedItem.name,
+        quantity: selectedItem.quantity,
+        location: selectedItem.location,
+        category: selectedItem.category,
+      }
+    : null;
 
   const handleAddItem = async (newItem: Omit<InventoryItem, 'id'>, tagIds?: number[]) => {
     if (addingItem) return;
@@ -289,11 +310,15 @@ const Index = () => {
                 categoryTree={categoryTree}
                 category={category}
                 onCategory={(v) => setCategory(v)}
+                locations={locationNames}
+                location={location}
+                onLocation={(v) => setLocation(v)}
               />
               <InventoryTable 
                 items={warehouseItems} 
                 search={search} 
                 categoryFilterNames={categoryFilterNames}
+                locationFilter={location}
                 selectedItem={selectedItem}
                 onSelectItem={setSelectedItem}
               />

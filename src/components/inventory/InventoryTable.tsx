@@ -27,6 +27,16 @@ export interface InventoryItem
 }
 
 const PAGE_SIZE_OPTIONS = [10, 30, 50];
+
+/** Склонение существительного при числе: 1 запись, 2 записи, 5 записей. */
+function plural(n: number, one: string, few: string, many: string): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return many;
+  const mod10 = n % 10;
+  if (mod10 === 1) return one;
+  if (mod10 >= 2 && mod10 <= 4) return few;
+  return many;
+}
 const DEFAULT_PAGE_SIZE = 50;
 
 /**
@@ -78,6 +88,8 @@ interface InventoryTableProps {
   search: string;
   /** Allowed category names (when filtering by category; parent includes descendants). Null = all */
   categoryFilterNames: string[] | null;
+  /** Название склада, по которому отбирать. Null — все склады. */
+  locationFilter?: string | null;
   selectedItem?: InventoryItem | null;
   onSelectItem?: (item: InventoryItem) => void;
   pageSizeOptions?: number[];
@@ -88,12 +100,13 @@ export const InventoryTable = ({
   items,
   search,
   categoryFilterNames,
+  locationFilter = null,
   selectedItem,
   onSelectItem,
   pageSizeOptions = PAGE_SIZE_OPTIONS,
   defaultPageSize = DEFAULT_PAGE_SIZE,
 }: InventoryTableProps) => {
-  type SortKey = "name" | "category" | "quantity" | "lastUpdated";
+  type SortKey = "name" | "category" | "quantity" | "location" | "lastUpdated";
   type SortDir = "asc" | "desc";
 
   const [sortKey, setSortKey] = useState<SortKey>("name");
@@ -127,9 +140,16 @@ export const InventoryTable = ({
   const filtered = useMemo(() => {
     return items.filter((i) => {
       const matchCategory = !allowedCategories || allowedCategories.has(i.category);
-      return matchCategory && matchParsedQuery(parsedSearch, i);
+      // Отбор по складу смотрит на все места хранения позиции, а не только на
+      // то, что показано в колонке: там стоит место с наибольшим остатком, и
+      // позиция, лежащая на нескольких складах, иначе потерялась бы.
+      const matchLocation =
+        !locationFilter ||
+        i.location === locationFilter ||
+        (i.locations || []).some((l) => l.location === locationFilter);
+      return matchCategory && matchLocation && matchParsedQuery(parsedSearch, i);
     });
-  }, [items, parsedSearch, allowedCategories]);
+  }, [items, parsedSearch, allowedCategories, locationFilter]);
 
 
   const sorted = useMemo(() => {
@@ -145,6 +165,11 @@ export const InventoryTable = ({
           break;
         case "quantity":
           res = a.quantity - b.quantity;
+          break;
+        case "location":
+          // Записи без места хранения собираются в конце, а не вперемешку:
+          // пустая строка сортируется раньше любой другой.
+          res = (a.location || "￿").localeCompare(b.location || "￿");
           break;
         case "lastUpdated": {
           const at = a.lastUpdated ? new Date(a.lastUpdated).getTime() : 0;
@@ -187,7 +212,7 @@ export const InventoryTable = ({
     <div className="rounded-lg border bg-card space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3">
         <span className="text-sm text-muted-foreground">
-          Всего {totalCount} изделий · Страница {page} из {totalPages}
+          Всего {totalCount} {plural(totalCount, "запись", "записи", "записей")} · Страница {page} из {totalPages}
         </span>
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">На странице:</span>
@@ -206,8 +231,8 @@ export const InventoryTable = ({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>№</TableHead>
-            <TableHead>Изображение</TableHead>
+            <TableHead className="w-12">№</TableHead>
+            <TableHead className="w-16">Фото</TableHead>
             <TableHead
               className="cursor-pointer select-none"
               onClick={() => setSort("name")}
@@ -224,9 +249,14 @@ export const InventoryTable = ({
               className="cursor-pointer select-none"
               onClick={() => setSort("quantity")}
             >
-              Кол-во (шт.) {sortKey === "quantity" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+              Кол-во {sortKey === "quantity" ? (sortDir === "asc" ? "▲" : "▼") : ""}
             </TableHead>
-            <TableHead>Расположение</TableHead>
+            <TableHead
+              className="cursor-pointer select-none"
+              onClick={() => setSort("location")}
+            >
+              Расположение {sortKey === "location" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+            </TableHead>
             <TableHead
               className="cursor-pointer select-none"
               onClick={() => setSort("lastUpdated")}

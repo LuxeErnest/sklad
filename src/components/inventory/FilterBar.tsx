@@ -5,6 +5,10 @@ interface FilterBarProps {
   categoryTree: CategoryNode[];
   category: string | null;
   onCategory: (v: string | null) => void;
+  /** Названия мест хранения, встречающихся в текущем списке. */
+  locations: string[];
+  location: string | null;
+  onLocation: (v: string | null) => void;
 }
 
 function flattenCategories(nodes: CategoryNode[], prefix = ""): { value: string; label: string }[] {
@@ -16,7 +20,14 @@ function flattenCategories(nodes: CategoryNode[], prefix = ""): { value: string;
   return out;
 }
 
-export const FilterBar = ({ categoryTree, category, onCategory }: FilterBarProps) => {
+export const FilterBar = ({
+  categoryTree,
+  category,
+  onCategory,
+  locations,
+  location,
+  onLocation,
+}: FilterBarProps) => {
   const flat = flattenCategories(categoryTree);
 
   return (
@@ -30,6 +41,25 @@ export const FilterBar = ({ categoryTree, category, onCategory }: FilterBarProps
             <SelectItem value="all">Все категории</SelectItem>
             {flat.map((c) => (
               <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/*
+        Отбор по складу. Список берётся из того, что реально лежит на складах, а
+        не из справочника мест хранения: место без единого остатка в этом отборе
+        бесполезно — оно ничего не покажет.
+      */}
+      <div className="min-w-[220px]">
+        <Select value={location ?? "all"} onValueChange={(v) => onLocation(v === "all" ? null : v)}>
+          <SelectTrigger aria-label="Фильтр по складу">
+            <SelectValue placeholder="Склад" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Все склады</SelectItem>
+            {locations.map((l) => (
+              <SelectItem key={l} value={l}>{l}</SelectItem>
             ))}
           </SelectContent>
         </Select>
