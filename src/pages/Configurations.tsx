@@ -16,6 +16,8 @@ import { Wrench, Plus, Save, Copy, Trash2, Package, Banknote, Calculator, CheckC
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { getConfigurations, getConfigurationComponents, createConfiguration, deleteConfiguration, getAssembledCounts, assembleConfiguration, disassembleConfiguration, writeOffConfiguration, updateConfiguration } from "@/lib/db";
 import { formatCurrency } from "@/lib/utils";
+import type { RecipeComponent } from "@/lib/calculator";
+import type { InventoryItem } from "@/components/inventory/InventoryTable";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -25,9 +27,18 @@ import { useSearchParams } from "react-router-dom";
 import { ItemLink } from "@/components/common/ItemLink";
 import { toast } from "@/hooks/use-toast";
 
-// Empty arrays for clean start
-const mockComponents: any[] = [];
-const mockConfigurations: any[] = [];
+/**
+ * Конфигурация со списком компонентов.
+ *
+ * Основа берётся из того, что возвращает слой данных, — описывать её ещё раз
+ * вручную значило бы завести второй источник правды о форме тех же данных.
+ */
+type ConfigurationRow = Awaited<ReturnType<typeof getConfigurations>>[number] & {
+  components: RecipeComponent[];
+};
+
+/** Пустой список — исходное состояние до загрузки. */
+const NO_CONFIGURATIONS: ConfigurationRow[] = [];
 
 const formSchema = z.object({
   name: z.string().min(1, "Название обязательно"),
@@ -42,9 +53,9 @@ const Configurations = () => {
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [configurations, setConfigurations] = useState(mockConfigurations);
+  const [configurations, setConfigurations] = useState<ConfigurationRow[]>(NO_CONFIGURATIONS);
   const [assembledCounts, setAssembledCounts] = useState<Record<number, number>>({});
-  const [selectedConfiguration, setSelectedConfiguration] = useState<typeof mockConfigurations[0] | null>(null);
+  const [selectedConfiguration, setSelectedConfiguration] = useState<ConfigurationRow | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [selectedComponents, setSelectedComponents] = useState<{[key: number]: number}>({});
@@ -88,24 +99,24 @@ const Configurations = () => {
       setAssembledCounts(countMap);
 
       if (cfgRows && Array.isArray(cfgRows) && cfgRows.length > 0) {
-        const cfgWithComponents = await Promise.all(
-          (cfgRows as any[]).map(async (cfg: any) => {
+        const cfgWithComponents: ConfigurationRow[] = await Promise.all(
+          cfgRows.map(async (cfg) => {
             const cc = await getConfigurationComponents(cfg.id);
-            const enriched = (cc as any[]).map((row: any) => ({
+            const components: RecipeComponent[] = cc.map((row) => ({
               componentId: row.componentId,
               quantity: row.quantity,
-              name: items.find((c) => c.id === row.componentId)?.name || "",
+              name: items.find((c) => c.id === row.componentId)?.name ?? "",
             }));
-            return { ...cfg, components: enriched };
+            return { ...cfg, components };
           })
         );
-        setConfigurations(cfgWithComponents as any);
+        setConfigurations(cfgWithComponents);
       } else {
-        setConfigurations(mockConfigurations as any);
+        setConfigurations(NO_CONFIGURATIONS);
       }
     } catch (error) {
       console.error('Error loading configurations:', error);
-      setConfigurations(mockConfigurations as any);
+      setConfigurations(NO_CONFIGURATIONS);
     }
   }, [items]);
 
@@ -154,9 +165,9 @@ const Configurations = () => {
     let totalItems = 0;
     
     Object.entries(selected).forEach(([componentId, quantity]) => {
-      const component = (components as any[]).find((c: any) => c.id === parseInt(componentId as any));
+      const component = components.find((c) => c.id === Number(componentId));
       if (component) {
-        totalValue += component.price * quantity;
+        totalValue += (component.price ?? 0) * quantity;
         totalItems += quantity;
       }
     });
@@ -172,10 +183,10 @@ const Configurations = () => {
     available: number;
     required: number;
     status: AvailabilityStatus;
-    stockComponent: typeof mockComponents[number] | null;
+    stockComponent: InventoryItem | null;
   }
 
-  const checkConfigurationAvailability = (config: typeof mockConfigurations[0]) => {
+  const checkConfigurationAvailability = (config: ConfigurationRow) => {
     const availability: AvailabilityItem[] = config.components.map(
       (comp: { componentId: number; quantity: number; name: string }) => {
       const stockComponent = components.find(c => c.id === comp.componentId);
@@ -213,7 +224,7 @@ const Configurations = () => {
     }
   };
 
-  const getAvailabilityBadge = (config: typeof mockConfigurations[0]) => {
+  const getAvailabilityBadge = (config: ConfigurationRow) => {
     const availability = checkConfigurationAvailability(config);
     
     if (availability.allAvailable) {
@@ -228,8 +239,8 @@ const Configurations = () => {
   const handleCreateConfiguration = async (data: FormData) => {
     const { totalValue, totalItems } = calculateTotals(selectedComponents);
     const componentsPayload = Object.entries(selectedComponents).map(([componentId, quantity]) => ({
-      componentId: parseInt(componentId as any),
-      quantity: quantity as number,
+      componentId: Number(componentId),
+      quantity,
     }));
 
     try {
@@ -295,7 +306,7 @@ const Configurations = () => {
     };
   }, [configurations, components]);
 
-  const getMaxBuilds = (config: typeof mockConfigurations[0]) => {
+  const getMaxBuilds = (config: ConfigurationRow) => {
     const availability = checkConfigurationAvailability(config);
     if (availability.items.length === 0) return 0;
     const limits = availability.items.map(i => Math.floor(i.available / i.required));
@@ -385,7 +396,7 @@ const Configurations = () => {
                     <div className="flex flex-wrap gap-3 mb-4">
                       <div className="w-48">
                         <Label>Доступность</Label>
-                        <Select value={availabilityFilter} onValueChange={(v) => setAvailabilityFilter(v as any)}>
+                        <Select value={availabilityFilter} onValueChange={(v) => setAvailabilityFilter(v as typeof availabilityFilter)}>
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
@@ -399,7 +410,7 @@ const Configurations = () => {
                       </div>
                       <div className="w-48">
                         <Label>Сортировка</Label>
-                        <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
+                        <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>

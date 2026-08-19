@@ -17,7 +17,8 @@ import { useState, useMemo, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { getDocuments, addDocument, deleteDocument as dbDeleteDocument, updateDocumentLinks } from "@/lib/db";
+import { getDocuments, addDocument, deleteDocument as dbDeleteDocument, updateDocumentLinks, readDocument } from "@/lib/db";
+import { getErrorMessage } from "@/services/errorHandler";
 import { useApp } from "@/contexts/AppContext";
 import { toast } from "@/hooks/use-toast";
 import { useConfirm } from "@/components/common/ConfirmDialog";
@@ -25,9 +26,20 @@ import { useSearchParams } from "react-router-dom";
 import { InventoryItem } from "@/components/inventory/InventoryTable";
 import { ItemLink } from "@/components/common/ItemLink";
 
-// Empty arrays for clean start
-const mockComponents: any[] = [];
-const mockDocuments: any[] = [];
+/** Документ в том виде, в каком его показывает страница. */
+interface DocumentRow {
+  id: number;
+  name: string;
+  type: string;
+  size: string;
+  componentIds: number[];
+  componentNames: string;
+  category: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  description: string;
+  tags: string[];
+}
 
 const formSchema = z.object({
   name: z.string().min(1, "Название обязательно"),
@@ -52,7 +64,7 @@ const Documents = () => {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [componentFilter, setComponentFilter] = useState<string>("all");
-  const [documents, setDocuments] = useState(mockDocuments);
+  const [documents, setDocuments] = useState<DocumentRow[]>([]);
   
   // Use items from context
   const components: ComponentOption[] = useMemo(() => {
@@ -63,13 +75,43 @@ const Documents = () => {
   }, [items]);
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
-  const [selectedDocument, setSelectedDocument] = useState<typeof mockDocuments[0] | null>(null);
+  const [selectedDocument, setSelectedDocument] = useState<DocumentRow | null>(null);
+  // Содержимое открытого документа: читается с диска по требованию.
+  const [previewUrl, setPreviewUrl] = useState<string>("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedComponentIds, setSelectedComponentIds] = useState<number[]>([]);
-  const [editLinksDoc, setEditLinksDoc] = useState<any | null>(null);
+  const [editLinksDoc, setEditLinksDoc] = useState<DocumentRow | null>(null);
   const [editSelectedComponentIds, setEditSelectedComponentIds] = useState<number[]>([]);
   const [componentSearch, setComponentSearch] = useState("");
   const [editComponentSearch, setEditComponentSearch] = useState("");
+
+  /**
+   * Приводит документ из слоя данных к виду для таблицы.
+   *
+   * Содержимое здесь не участвует: файлы вынесены из базы на диск и читаются
+   * по одному, когда их открывают или скачивают. Раньше в этом месте строился
+   * data-адрес из поля dataBase64 — после переезда файлов его не стало, и
+   * ссылка молча отдавала пустышку, потому что весь разбор шёл через any.
+   */
+  const toDocumentRow = (r: Awaited<ReturnType<typeof getDocuments>>[number]): DocumentRow => {
+    const componentIds = r.componentIds ?? [];
+    return {
+      id: r.id,
+      name: r.name || "Без названия",
+      type: (r.type || "").toString(),
+      size: `${(Number(r.sizeBytes || 0) / (1024 * 1024)).toFixed(1)} MB`,
+      componentIds,
+      componentNames: componentIds
+        .map((id) => items.find((c) => c.id === id)?.name)
+        .filter(Boolean)
+        .join(", "),
+      category: r.category || "Без категории",
+      uploadedBy: r.uploadedBy || "Пользователь",
+      uploadedAt: (r.uploadedAt || "").toString().split("T")[0],
+      description: r.description || "",
+      tags: r.tags ?? [],
+    };
+  };
 
   const filteredComponents = useMemo(() => {
     const q = componentSearch.toLowerCase().trim();
@@ -122,52 +164,10 @@ const Documents = () => {
     
     const loadDocs = async () => {
       try {
-        const rows: any[] = await getDocuments();
+        const rows = await getDocuments();
         if (!isMounted) return;
-        
-        if (!Array.isArray(rows)) {
-          console.warn('⚠️ getDocuments returned non-array:', rows);
-          if (isMounted) setDocuments([]);
-          return;
-        }
-        
-        const mapped = rows.map((r: any) => {
-          try {
-            const ext = (r.type || '').toString();
-            const mime = getMimeFromExtension(ext);
-            const dataUrl = `data:${mime};base64,${r.dataBase64 || ''}`;
-            const componentIds: number[] = typeof r.componentIds === 'string' && r.componentIds
-              ? r.componentIds.split(',').map((id: string) => Number(id)).filter(Boolean)
-              : (r.legacyComponentId ? [Number(r.legacyComponentId)] : []);
-            const compNames = componentIds
-              .map((id) => {
-                const item = Array.isArray(items) ? items.find((c) => c.id === id) : null;
-                return item?.name;
-              })
-              .filter(Boolean)
-              .join(', ');
-            return {
-              id: r.id,
-              name: r.name || 'Без названия',
-              type: ext,
-              size: `${(Number(r.sizeBytes || 0) / (1024 * 1024)).toFixed(1)} MB`,
-              componentIds,
-              componentNames: compNames,
-              category: r.category || 'Без категории',
-              uploadedBy: r.uploadedBy || 'Пользователь',
-              uploadedAt: (r.uploadedAt || '').toString().split('T')[0],
-              description: r.description || '',
-              tags: typeof r.tags === 'string' ? r.tags.split(',').filter(Boolean) : (r.tags || []),
-              url: dataUrl,
-            };
-          } catch (itemError) {
-            console.error('❌ Error processing document item:', itemError, r);
-            return null;
-          }
-        }).filter(Boolean) as any[];
-        
         if (isMounted) {
-          setDocuments(mapped);
+          setDocuments(rows.map(toDocumentRow));
         }
       } catch (error) {
         console.error('❌ Error loading documents:', error);
@@ -313,18 +313,48 @@ const Documents = () => {
     setDocuments(prev => prev.filter(doc => doc.id !== id));
   };
 
-  const handleViewDocument = (document: typeof mockDocuments[0]) => {
-    setSelectedDocument(document);
-    setIsViewDialogOpen(true);
+  /**
+   * Читает содержимое документа с диска.
+   *
+   * Со списком оно больше не приходит: файлы вынесены из базы, и тянуть их все
+   * разом в память было бы возвратом к тому, из-за чего база разрослась. Здесь
+   * читается ровно один файл и ровно когда он понадобился.
+   */
+  const loadDocumentUrl = async (doc: DocumentRow): Promise<string> => {
+    const base64 = await readDocument(doc.id);
+    return `data:${getMimeFromExtension(doc.type)};base64,${base64}`;
   };
 
-  const handleDownloadDocument = (doc: typeof mockDocuments[0]) => {
-    const link = document.createElement('a');
-    link.href = doc.url;
-    link.download = doc.name;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleViewDocument = async (doc: DocumentRow) => {
+    setSelectedDocument(doc);
+    setIsViewDialogOpen(true);
+    try {
+      setPreviewUrl(await loadDocumentUrl(doc));
+    } catch (error) {
+      setPreviewUrl("");
+      toast({
+        title: "Не удалось открыть документ",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDownloadDocument = async (doc: DocumentRow) => {
+    try {
+      const link = document.createElement('a');
+      link.href = await loadDocumentUrl(doc);
+      link.download = doc.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      toast({
+        title: "Не удалось скачать документ",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    }
   };
 
   const getFileIcon = (type: string) => {
@@ -638,11 +668,15 @@ const Documents = () => {
                     </div>
                   ) : selectedDocument.type.toLowerCase().match(/jpg|jpeg|png/) ? (
                     <div className="text-center">
-                      <img 
-                        src={selectedDocument.url} 
-                        alt={selectedDocument.name}
-                        className="max-w-full max-h-64 object-contain rounded"
-                      />
+                      {previewUrl ? (
+                        <img
+                          src={previewUrl}
+                          alt={selectedDocument.name}
+                          className="max-w-full max-h-64 object-contain rounded"
+                        />
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Загрузка…</p>
+                      )}
                     </div>
                   ) : (
                     <div className="text-center">
