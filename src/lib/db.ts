@@ -11,7 +11,7 @@
  * изменения есть строка в журнале.
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type {
   ConfigurationView,
   DocumentView,
@@ -34,6 +34,18 @@ export type {
   StockAtLocation,
 } from "@/lib/generated";
 import { queryClient, queryKeys } from "@/lib/queryClient";
+
+/**
+ * Адрес изображения для показа в окне.
+ *
+ * В базе лежит путь к файлу на диске, а окну нужен адрес: обычный путь оно не
+ * загрузит. Ссылки, введённые вручную, остаются как есть.
+ */
+function imageSrc(path: string | null | undefined): string | undefined {
+  if (!path) return undefined;
+  if (/^(https?:|data:)/i.test(path)) return path;
+  return convertFileSrc(path);
+}
 
 // ---------- Типы, которые ждёт интерфейс ----------
 
@@ -93,7 +105,7 @@ function toLegacyItem(item: ItemView) {
     category: item.category ?? "Без категории",
     location: item.location ?? "",
     lastUpdated: (item.updatedAt || "").split("T")[0],
-    imageUrl: item.imagePath ?? undefined,
+    imageUrl: imageSrc(item.imagePath),
     minStock: item.minStock,
   };
 }
@@ -154,6 +166,14 @@ export interface SaveComponentInput {
  * списании, из-за чего исправление опечатки попадало в отчёт по выбытию.
  */
 export async function upsertComponent(c: SaveComponentInput) {
+  // Загруженный файл сначала кладётся на диск, и в карточку идёт путь к нему.
+  // Раньше содержимое оставалось в форме и никуда не отправлялось: человек
+  // видел предпросмотр и сообщение «файл успешно загружен», сохранял карточку,
+  // а изображение молча пропадало.
+  const imagePath = c.imageBase64
+    ? await invoke<string>("save_item_image", { dataBase64: c.imageBase64 })
+    : (c.imageUrl ?? undefined);
+
   const id = await invoke<number>("save_item", {
     input: {
       id: c.id,
@@ -164,7 +184,7 @@ export async function upsertComponent(c: SaveComponentInput) {
       barcode: c.barcode,
       description: c.description,
       url: c.url,
-      imagePath: c.imageUrl ?? undefined,
+      imagePath,
     },
   });
 
@@ -252,12 +272,6 @@ export async function getLocations() {
   return await invoke<LocationView[]>("list_locations");
 }
 
-export async function createLocation(name: string) {
-  const id = await invoke<number>("create_location", { name });
-  notify("componentsUpdated");
-  return id;
-}
-
 export async function renameLocation(locationId: number, name: string) {
   await invoke("rename_location", { locationId, name });
   notify("componentsUpdated");
@@ -322,11 +336,6 @@ function toLegacyPath(line: OperationLineView, index: number) {
 export async function getComponentPaths(componentId: number) {
   const lines = await invoke<OperationLineView[]>("item_history", { itemId: componentId });
   return lines.map(toLegacyPath);
-}
-
-/** Полная история по изделию — то же, что и этапы, но без переименования полей. */
-export async function getItemHistory(componentId: number) {
-  return await invoke<OperationLineView[]>("item_history", { itemId: componentId });
 }
 
 /** Маршрутный лист склада: всё, что приходило к нему и уходило от него. */
@@ -419,40 +428,6 @@ export async function addComponentGroup(payload: {
   return id;
 }
 
-/**
- * Приводит остаток на месте хранения к указанному значению.
- *
- * Разница оформляется корректировкой, а не тихой правкой числа: у любого
- * изменения количества должно остаться объяснение.
- */
-export async function updateComponentGroup(payload: {
-  groupId: number; componentId?: number; quantity?: number; location?: string;
-}) {
-  if (payload.quantity === undefined || payload.componentId === undefined) return 0;
-  const groups = await getComponentGroups(payload.componentId);
-  const current = groups.find((g) => g.id === payload.groupId);
-  if (!current) throw new Error("Место хранения не найдено");
-
-  const delta = payload.quantity - current.quantity;
-  if (delta === 0) return 0;
-
-  const id = await invoke<number>("register_operation", {
-    input: {
-      kind: "correction",
-      performedBy: "Пользователь",
-      note: `Корректировка остатка на «${current.location}»`,
-      lines: [{
-        itemId: payload.componentId,
-        fromLocationId: delta < 0 ? payload.groupId : null,
-        toLocationId: delta > 0 ? payload.groupId : null,
-        quantity: Math.abs(delta),
-      }],
-    },
-  });
-  notify("componentsUpdated");
-  return id;
-}
-
 // ---------- Списание ----------
 
 export async function scrapFromLocation(componentId: number, location: string, quantity: number) {
@@ -532,9 +507,30 @@ export async function getScrappedItems() {
   }));
 }
 
+/**
+ * Списания по одному изделию.
+ *
+ * Берётся история самого изделия, а не последние пятьсот списаний по всему
+ * складу с отбором на месте. Разница не в скорости: при пятистах списаниях по
+ * складу более старые списания изделия просто переставали показываться на его
+ * карточке, и чем дольше склад работает, тем больше их пропадает. Соседние
+ * функции — поставки и перемещения — давно сделаны правильно.
+ */
 export async function getScrappedItemsByComponentId(componentId: number) {
-  const all = await getScrappedItems();
-  return all.filter((s) => s.componentId === componentId);
+  const lines = await invoke<OperationLineView[]>("item_history", { itemId: componentId });
+  return lines
+    .filter((l) => l.kind === "writeoff")
+    .map((l) => ({
+      id: l.id,
+      componentId: l.itemId,
+      componentName: l.itemName,
+      quantity: l.quantity,
+      reason: l.note,
+      scrappedAt: l.performedAt,
+      scrappedBy: l.performedBy,
+      location: l.fromLocation,
+      price: l.unitPrice,
+    }));
 }
 
 export async function getSupplyRecordsByComponentId(componentId: number) {
@@ -565,30 +561,6 @@ export async function getCategoriesTree(): Promise<CategoryNode[]> {
     }
   });
   return [...byId.values()].filter((n) => n.parentId == null);
-}
-
-export async function getAllCategoryNames(): Promise<string[]> {
-  const rows = await invoke<{ name: string }[]>("list_categories");
-  return rows.map((r) => r.name);
-}
-
-export async function getCategoryNamesForFilter(selectedId: number | null): Promise<string[] | null> {
-  if (selectedId == null) return null;
-  const tree = await getCategoriesTree();
-  const collect = (node: CategoryNode): string[] => [
-    node.name,
-    ...node.children.flatMap(collect),
-  ];
-  const find = (nodes: CategoryNode[]): CategoryNode | null => {
-    for (const n of nodes) {
-      if (n.id === selectedId) return n;
-      const inChild = find(n.children);
-      if (inChild) return inChild;
-    }
-    return null;
-  };
-  const node = find(tree);
-  return node ? collect(node) : null;
 }
 
 export async function createCategory(name: string, parentId: number | null): Promise<number> {
@@ -636,15 +608,6 @@ export async function getComponentTagIds(componentId: number): Promise<number[]>
 export async function setComponentTags(componentId: number, tagIds: number[]): Promise<void> {
   await invoke("set_item_tags", { itemId: componentId, tagIds });
   notify("componentsUpdated");
-}
-
-export async function getComponentTagsMap(): Promise<Record<number, string[]>> {
-  const items = await invoke<ItemView[]>("list_items");
-  const map: Record<number, string[]> = {};
-  items.forEach((i) => {
-    if (i.tags.length) map[i.id] = i.tags;
-  });
-  return map;
 }
 
 // ---------- Конфигурации ----------
@@ -740,11 +703,6 @@ export async function getAssembledCounts() {
   return rows
     .filter((c) => c.assembled > 0)
     .map((c) => ({ configurationId: c.id, quantity: c.assembled }));
-}
-
-export async function getTotalAssembledCount(): Promise<number> {
-  const rows = await invoke<ConfigurationView[]>("list_configurations");
-  return rows.reduce((sum, c) => sum + c.assembled, 0);
 }
 
 export async function assembleConfiguration(payload: {
@@ -872,11 +830,6 @@ export async function addDocument(payload: {
 export async function deleteDocument(id: number) {
   await invoke("delete_document", { documentId: id });
   notify("documentsUpdated");
-}
-
-export async function getDocumentLinks(documentId: number): Promise<number[]> {
-  const docs = await invoke<DocumentView[]>("list_documents");
-  return docs.find((d) => d.id === documentId)?.itemIds ?? [];
 }
 
 export async function updateDocumentLinks(documentId: number, componentIds: number[]) {

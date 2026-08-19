@@ -82,6 +82,7 @@ pub fn run() {
             documents::delete_document,
             documents::read_document,
             documents::item_documents,
+            documents::save_item_image,
             // Сводка и целостность
             stats::warehouse_statistics,
             stats::check_integrity,

@@ -295,3 +295,55 @@ pub fn item_documents(item_id: i64, db: State<'_, Db>) -> DbResult<Vec<DocumentV
         Ok(docs.collect::<rusqlite::Result<Vec<_>>>()?)
     })
 }
+
+// ---------- Изображения изделий ----------
+
+fn images_dir<R: Runtime>(app: &AppHandle<R>) -> DbResult<PathBuf> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| DbError(format!("Не удалось определить каталог данных: {}", e)))?
+        .join("images");
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir)
+}
+
+/// Сохраняет изображение изделия и возвращает путь к файлу.
+///
+/// Раньше форма читала выбранный файл в base64 и складывала в поле, которое
+/// никуда не отправлялось: пользователь видел предпросмотр и сообщение «файл
+/// успешно загружен», сохранял карточку — и изображение молча пропадало.
+/// Хранится оно так же, как документы: файл на диске, в базе только путь.
+/// Складывать пятимегабайтную картинку строкой в таблицу незачем — от этого
+/// в проекте уже уходили, когда содержимое документов занимало 94% файла базы.
+#[tauri::command]
+pub fn save_item_image<R: Runtime>(app: AppHandle<R>, data_base64: String) -> DbResult<String> {
+    let payload = data_base64
+        .split_once(";base64,")
+        .map(|(_, rest)| rest)
+        .unwrap_or(&data_base64);
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(payload.trim())
+        .map_err(|_| DbError("Не удалось прочитать изображение".to_string()))?;
+    if bytes.is_empty() {
+        return Err(DbError("Файл изображения пуст".to_string()));
+    }
+
+    // Тип определяется по самому содержимому, а не по имени: имени здесь нет,
+    // а расширение нужно, чтобы окно потом показало картинку.
+    let extension = match bytes.as_slice() {
+        [0x89, b'P', b'N', b'G', ..] => ".png",
+        [0xFF, 0xD8, 0xFF, ..] => ".jpg",
+        [b'G', b'I', b'F', ..] => ".gif",
+        [b'R', b'I', b'F', b'F', ..] => ".webp",
+        _ => return Err(DbError("Поддерживаются PNG, JPEG, GIF и WebP".to_string())),
+    };
+
+    let digest = format!("{:x}", Sha256::digest(&bytes));
+    let file_name = format!("{}{}", digest, extension);
+    let target = images_dir(&app)?.join(&file_name);
+    if !target.exists() {
+        std::fs::write(&target, &bytes)?;
+    }
+    Ok(target.to_string_lossy().to_string())
+}
