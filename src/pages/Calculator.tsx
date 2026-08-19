@@ -139,11 +139,11 @@ const Calculator = () => {
   const getPriorityBadge = (priority: string) => {
     switch (priority) {
       case 'high':
-        return <Badge variant="destructive">Р’С‹СЃРѕРєРёР№</Badge>;
+        return <Badge variant="destructive">Высокий</Badge>;
       case 'medium':
-        return <Badge variant="secondary" className="bg-yellow-500 text-yellow-900">РЎСЂРµРґРЅРёР№</Badge>;
+        return <Badge variant="secondary" className="bg-yellow-500 text-yellow-900">Средний</Badge>;
       case 'low':
-        return <Badge variant="outline">РќРёР·РєРёР№</Badge>;
+        return <Badge variant="outline">Низкий</Badge>;
       default:
         return null;
     }

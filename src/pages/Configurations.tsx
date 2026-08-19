@@ -242,7 +242,9 @@ const Configurations = () => {
       // Reload configurations
       await loadConfigurations();
       await refreshItems();
-    } catch {}
+    } catch {
+      // Ошибка обновления не отменяет уже выполненное действие
+    }
 
     setIsCreateDialogOpen(false);
     setSelectedComponents({});

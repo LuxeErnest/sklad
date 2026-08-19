@@ -56,7 +56,8 @@ fn documents_dir<R: Runtime>(app: &AppHandle<R>) -> DbResult<PathBuf> {
 }
 
 fn extension_for(name: &str, mime: Option<&str>) -> String {
-    let ok = |s: &str| !s.is_empty() && s.len() <= 8 && s.chars().all(|c| c.is_ascii_alphanumeric());
+    let ok =
+        |s: &str| !s.is_empty() && s.len() <= 8 && s.chars().all(|c| c.is_ascii_alphanumeric());
     if let Some((_, ext)) = name.rsplit_once('.') {
         if ok(ext) {
             return format!(".{}", ext.to_ascii_lowercase());
@@ -98,9 +99,9 @@ pub fn list_documents(db: State<'_, Db>) -> DbResult<Vec<DocumentView>> {
 
         let mut link_stmt = conn.prepare("SELECT document_id, item_id FROM document_items")?;
         let mut links = std::collections::HashMap::<i64, Vec<i64>>::new();
-        for row in link_stmt.query_map([], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
-        })? {
+        for row in
+            link_stmt.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?
+        {
             let (document_id, item_id) = row?;
             links.entry(document_id).or_default().push(item_id);
         }
@@ -180,11 +181,7 @@ pub fn add_document<R: Runtime>(
 }
 
 #[tauri::command]
-pub fn set_document_items(
-    document_id: i64,
-    item_ids: Vec<i64>,
-    db: State<'_, Db>,
-) -> DbResult<()> {
+pub fn set_document_items(document_id: i64, item_ids: Vec<i64>, db: State<'_, Db>) -> DbResult<()> {
     db.transaction(|tx| {
         tx.execute(
             "DELETE FROM document_items WHERE document_id = ?1",

@@ -65,7 +65,9 @@ export const ProductCardFull = ({ item, onBack, onRefresh }: ProductCardFullProp
     try {
       await setComponentTags(item.id, tagIds);
       onRefresh?.();
-    } catch {}
+    } catch {
+      // Обновление списка не обязано удаться: основное действие уже выполнено
+    }
   };
 
   return (

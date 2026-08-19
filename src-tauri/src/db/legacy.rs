@@ -33,10 +33,7 @@ pub fn is_legacy_database(path: &Path) -> bool {
     if !path.exists() {
         return false;
     }
-    match rusqlite::Connection::open_with_flags(
-        path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    ) {
+    match rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY) {
         Ok(conn) => conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='components'",
@@ -182,8 +179,8 @@ fn run_import(tx: &Transaction, extracted: &[ExtractedDocument]) -> DbResult<Imp
           WHERE stepLocation IS NOT NULL AND TRIM(stepLocation) != ''",
         [],
     )?;
-    report.locations = tx.query_row("SELECT COUNT(*) FROM locations", [], |r| r.get::<_, i64>(0))?
-        as usize;
+    report.locations =
+        tx.query_row("SELECT COUNT(*) FROM locations", [], |r| r.get::<_, i64>(0))? as usize;
 
     // --- Категории: из справочника и из текстовых значений у товаров ---
     tx.execute(
@@ -195,8 +192,9 @@ fn run_import(tx: &Transaction, extracted: &[ExtractedDocument]) -> DbResult<Imp
           WHERE category IS NOT NULL AND TRIM(category) != ''",
         [],
     )?;
-    report.categories =
-        tx.query_row("SELECT COUNT(*) FROM categories", [], |r| r.get::<_, i64>(0))? as usize;
+    report.categories = tx.query_row("SELECT COUNT(*) FROM categories", [], |r| {
+        r.get::<_, i64>(0)
+    })? as usize;
 
     // --- Теги ---
     tx.execute(
@@ -261,8 +259,9 @@ fn run_import(tx: &Transaction, extracted: &[ExtractedDocument]) -> DbResult<Imp
     import_paths(tx)?;
     import_supplies(tx)?;
     import_scrapped(tx)?;
-    report.operations =
-        tx.query_row("SELECT COUNT(*) FROM operations", [], |r| r.get::<_, i64>(0))? as usize;
+    report.operations = tx.query_row("SELECT COUNT(*) FROM operations", [], |r| {
+        r.get::<_, i64>(0)
+    })? as usize;
 
     // --- Конфигурации: каждой заводится результирующая позиция номенклатуры ---
     report.configurations = import_configurations(tx, &now)?;
@@ -512,11 +511,15 @@ fn import_scrapped(tx: &Transaction) -> DbResult<()> {
     Ok(())
 }
 
+/// Конфигурация из старой базы: идентификатор, название, описание,
+/// дата создания, категория.
+type LegacyConfiguration = (i64, String, Option<String>, Option<String>, Option<String>);
+
 fn import_configurations(tx: &Transaction, now: &str) -> DbResult<usize> {
     let mut stmt = tx.prepare(
         "SELECT id, name, description, createdAt, category, location FROM legacy.configurations",
     )?;
-    let rows: Vec<(i64, String, Option<String>, Option<String>, Option<String>)> = stmt
+    let rows: Vec<LegacyConfiguration> = stmt
         .query_map([], |row| {
             Ok((
                 row.get(0)?,

@@ -87,7 +87,9 @@ export const InventoryTable = ({
         const n = parseInt(saved, 10);
         if (pageSizeOptions.includes(n)) return n;
       }
-    } catch {}
+    } catch {
+      // localStorage может быть недоступен — берём значение по умолчанию
+    }
     return defaultPageSize;
   });
 
@@ -146,7 +148,9 @@ export const InventoryTable = ({
     setPage(1);
     try {
       localStorage.setItem("inventory_page_size", String(n));
-    } catch {}
+    } catch {
+      // Размер страницы — не критичная настройка, потерять её не страшно
+    }
   };
 
   return (

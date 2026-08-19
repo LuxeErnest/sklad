@@ -117,9 +117,8 @@ fn load_items(conn: &rusqlite::Connection, archived: bool) -> DbResult<Vec<ItemV
         stock_rows.entry(item_id).or_default().push(entry);
     }
 
-    let mut tag_stmt = conn.prepare(
-        "SELECT it.item_id, t.name FROM item_tags it JOIN tags t ON t.id = it.tag_id",
-    )?;
+    let mut tag_stmt = conn
+        .prepare("SELECT it.item_id, t.name FROM item_tags it JOIN tags t ON t.id = it.tag_id")?;
     let mut tag_rows = std::collections::HashMap::<i64, Vec<String>>::new();
     for row in tag_stmt.query_map([], |row| {
         Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
@@ -166,7 +165,9 @@ pub fn save_item_on(db: &Db, input: ItemInput) -> DbResult<i64> {
         return Err(DbError("Название изделия обязательно".to_string()));
     }
     if input.min_stock.unwrap_or(0) < 0 {
-        return Err(DbError("Минимальный запас не может быть отрицательным".to_string()));
+        return Err(DbError(
+            "Минимальный запас не может быть отрицательным".to_string(),
+        ));
     }
     if input.price.is_some_and(|p| p < 0.0) {
         return Err(DbError("Цена не может быть отрицательной".to_string()));
@@ -479,8 +480,8 @@ pub struct CategoryView {
 #[tauri::command]
 pub fn list_categories(db: State<'_, Db>) -> DbResult<Vec<CategoryView>> {
     db.with(|conn| {
-        let mut stmt =
-            conn.prepare("SELECT id, name, parent_id FROM categories ORDER BY name COLLATE NOCASE")?;
+        let mut stmt = conn
+            .prepare("SELECT id, name, parent_id FROM categories ORDER BY name COLLATE NOCASE")?;
         let rows = stmt.query_map([], |row| {
             Ok(CategoryView {
                 id: row.get(0)?,

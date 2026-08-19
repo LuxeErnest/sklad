@@ -59,13 +59,13 @@ export const AnalyticsTab = ({
   const downloadWarehouseReport = () => {
     // Prepare data for Excel
     const excelData = components.map(item => ({
-      'РќР°РёРјРµРЅРѕРІР°РЅРёРµ': item.name,
-      'РљР°С‚РµРіРѕСЂРёСЏ': item.category,
-      'РљРѕР»РёС‡РµСЃС‚РІРѕ (С€С‚.)': item.quantity,
-      'Р Р°СЃРїРѕР»РѕР¶РµРЅРёРµ': item.location,
-      'Р¦РµРЅР° (в‚Ѕ)': item.price || 0,
-      'РћР±С‰Р°СЏ СЃС‚РѕРёРјРѕСЃС‚СЊ (в‚Ѕ)': (item.price || 0) * item.quantity,
-      'РџРѕСЃР»РµРґРЅРµРµ РѕР±РЅРѕРІР»РµРЅРёРµ': item.lastUpdated || 'РќРµ СѓРєР°Р·Р°РЅРѕ'
+      'Наименование': item.name,
+      'Категория': item.category,
+      'Количество (шт.)': item.quantity,
+      'Расположение': item.location,
+      'Цена (₽)': item.price || 0,
+      'Общая стоимость (₽)': (item.price || 0) * item.quantity,
+      'Последнее обновление': item.lastUpdated || 'Не указано'
     }));
     
     // Create workbook and worksheet
@@ -74,17 +74,17 @@ export const AnalyticsTab = ({
     
     // Set column widths
     ws['!cols'] = [
-      { wch: 30 }, // РќР°РёРјРµРЅРѕРІР°РЅРёРµ
-      { wch: 20 }, // РљР°С‚РµРіРѕСЂРёСЏ
-      { wch: 15 }, // РљРѕР»РёС‡РµСЃС‚РІРѕ
-      { wch: 20 }, // Р Р°СЃРїРѕР»РѕР¶РµРЅРёРµ
-      { wch: 15 }, // Р¦РµРЅР°
-      { wch: 20 }, // РћР±С‰Р°СЏ СЃС‚РѕРёРјРѕСЃС‚СЊ
-      { wch: 20 }  // РџРѕСЃР»РµРґРЅРµРµ РѕР±РЅРѕРІР»РµРЅРёРµ
+      { wch: 30 }, // Наименование
+      { wch: 20 }, // Категория
+      { wch: 15 }, // Количество
+      { wch: 20 }, // Расположение
+      { wch: 15 }, // Цена
+      { wch: 20 }, // Общая стоимость
+      { wch: 20 }  // Последнее обновление
     ];
     
     // Add worksheet to workbook
-    XLSX.utils.book_append_sheet(wb, ws, 'РћС‚С‡РµС‚ РїРѕ СЃРєР»Р°РґСѓ');
+    XLSX.utils.book_append_sheet(wb, ws, 'Отчет по складу');
     
     // Generate and download file
     const fileName = `warehouse_report_${new Date().toISOString().split('T')[0]}.xlsx`;

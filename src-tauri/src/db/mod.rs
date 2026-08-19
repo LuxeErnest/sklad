@@ -84,8 +84,13 @@ impl Db {
     ///
     /// Каждый вызов даёт отдельную чистую базу с применёнными миграциями,
     /// ничего не остаётся на диске и тесты не мешают друг другу.
+    #[cfg(test)]
     pub fn open_in_memory() -> DbResult<Self> {
-        Self::from_connection(Connection::open_in_memory()?, PathBuf::from(":memory:"), false)
+        Self::from_connection(
+            Connection::open_in_memory()?,
+            PathBuf::from(":memory:"),
+            false,
+        )
     }
 
     fn from_connection(conn: Connection, path: PathBuf, wal: bool) -> DbResult<Self> {

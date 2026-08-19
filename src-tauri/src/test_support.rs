@@ -59,7 +59,10 @@ pub fn operation(kind: &str, lines: Vec<OperationLineInput>) -> OperationInput {
 pub fn receive(db: &Db, item_id: i64, location_id: i64, quantity: i64) {
     crate::commands::operations::register_on(
         db,
-        &operation("receipt", vec![line(item_id, None, Some(location_id), quantity)]),
+        &operation(
+            "receipt",
+            vec![line(item_id, None, Some(location_id), quantity)],
+        ),
     )
     .expect("поступление должно проходить");
 }

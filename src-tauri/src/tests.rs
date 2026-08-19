@@ -5,10 +5,10 @@
 //! остаткам. Именно эти обещания прежний слой данных не выполнял — и как раз
 //! поэтому расхождения находились уже в живой базе.
 
+use crate::commands::catalog;
 use crate::commands::configurations::{self, ConfigurationComponentInput, ConfigurationInput};
 use crate::commands::operations::register_on;
 use crate::commands::stats::check_integrity_on;
-use crate::commands::catalog;
 use crate::test_support::*;
 
 // ---------- Схема и миграции ----------
@@ -66,11 +66,19 @@ fn перемещение_не_меняет_общий_остаток() {
     let (a, b) = (location(&db, "Склад А"), location(&db, "Склад Б"));
     receive(&db, i, a, 10);
 
-    register_on(&db, &operation("transfer", vec![line(i, Some(a), Some(b), 4)])).unwrap();
+    register_on(
+        &db,
+        &operation("transfer", vec![line(i, Some(a), Some(b), 4)]),
+    )
+    .unwrap();
 
     assert_eq!(stock_at(&db, i, a), 6);
     assert_eq!(stock_at(&db, i, b), 4);
-    assert_eq!(stock_total(&db, i), 10, "перемещение не создаёт и не уничтожает товар");
+    assert_eq!(
+        stock_total(&db, i),
+        10,
+        "перемещение не создаёт и не уничтожает товар"
+    );
 }
 
 #[test]
@@ -102,7 +110,10 @@ fn неудачная_операция_откатывается_целиком()
         &db,
         &operation(
             "writeoff",
-            vec![line(первый, Some(l), None, 5), line(второй, Some(l), None, 99)],
+            vec![
+                line(первый, Some(l), None, 5),
+                line(второй, Some(l), None, 99),
+            ],
         ),
     );
 
@@ -113,7 +124,11 @@ fn неудачная_операция_откатывается_целиком()
         "первая строка уже применилась к остатку — откат обязан её вернуть"
     );
     assert_eq!(stock_at(&db, второй, l), 1);
-    assert_eq!(count(&db, "operations"), 2, "остаться должны только два поступления");
+    assert_eq!(
+        count(&db, "operations"),
+        2,
+        "остаться должны только два поступления"
+    );
 }
 
 // ---------- Сверка с журналом ----------
@@ -125,9 +140,21 @@ fn журнал_сходится_с_остатками_после_цепочки
     let (a, b) = (location(&db, "Склад А"), location(&db, "Склад Б"));
 
     receive(&db, i, a, 100);
-    register_on(&db, &operation("transfer", vec![line(i, Some(a), Some(b), 30)])).unwrap();
-    register_on(&db, &operation("writeoff", vec![line(i, Some(b), None, 10)])).unwrap();
-    register_on(&db, &operation("correction", vec![line(i, None, Some(a), 5)])).unwrap();
+    register_on(
+        &db,
+        &operation("transfer", vec![line(i, Some(a), Some(b), 30)]),
+    )
+    .unwrap();
+    register_on(
+        &db,
+        &operation("writeoff", vec![line(i, Some(b), None, 10)]),
+    )
+    .unwrap();
+    register_on(
+        &db,
+        &operation("correction", vec![line(i, None, Some(a), 5)]),
+    )
+    .unwrap();
 
     let report = check_integrity_on(&db).unwrap();
     assert!(
@@ -175,7 +202,10 @@ fn сборка_списывает_компоненты_и_приходует_и
 
     let view = configurations::list(&db).unwrap();
     let собрано = view.iter().find(|c| c.id == cfg).unwrap().assembled;
-    assert_eq!(собрано, 3, "«сколько собрано» — это остаток результирующей позиции");
+    assert_eq!(
+        собрано, 3,
+        "«сколько собрано» — это остаток результирующей позиции"
+    );
 
     let report = check_integrity_on(&db).unwrap();
     assert!(report.stock_drift.is_empty());
@@ -193,7 +223,11 @@ fn сборка_при_нехватке_одного_компонента_не_�
     let result = configurations::assemble(&db, cfg, 5, l);
 
     assert!(result.is_err(), "гаек не хватает — сборка невозможна");
-    assert_eq!(stock_at(&db, болт, l), 10, "болты не должны быть израсходованы");
+    assert_eq!(
+        stock_at(&db, болт, l),
+        10,
+        "болты не должны быть израсходованы"
+    );
     assert_eq!(stock_at(&db, гайка, l), 1);
 }
 
@@ -209,7 +243,11 @@ fn разборка_возвращает_компоненты() {
     assert_eq!(stock_at(&db, болт, l), 4);
 
     configurations::disassemble(&db, cfg, 2, l).unwrap();
-    assert_eq!(stock_at(&db, болт, l), 8, "две единицы изделия вернули 4 болта");
+    assert_eq!(
+        stock_at(&db, болт, l),
+        8,
+        "две единицы изделия вернули 4 болта"
+    );
 
     let собрано = configurations::list(&db)
         .unwrap()
@@ -259,7 +297,11 @@ fn слияние_убирает_перемещения_между_объеди�
     let болт = item(&db, "Болт");
     let (a, b) = (location(&db, "sklad"), location(&db, "skladв"));
     receive(&db, болт, a, 10);
-    register_on(&db, &operation("transfer", vec![line(болт, Some(a), Some(b), 4)])).unwrap();
+    register_on(
+        &db,
+        &operation("transfer", vec![line(болт, Some(a), Some(b), 4)]),
+    )
+    .unwrap();
 
     // После слияния такое перемещение стало бы «сам в себя», что запрещено
     // проверкой в схеме — здесь это и проверяется.

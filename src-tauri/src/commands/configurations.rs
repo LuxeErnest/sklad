@@ -11,6 +11,20 @@ use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+/// Строка заголовка конфигурации в том виде, в каком её отдаёт запрос:
+/// идентификатор, название, описание, результирующая позиция и её название,
+/// дата создания, дата архивирования, количество собранного.
+type ConfigurationRow = (
+    i64,
+    String,
+    Option<String>,
+    i64,
+    String,
+    String,
+    Option<String>,
+    i64,
+);
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigurationComponent {
@@ -75,7 +89,7 @@ pub fn list(db: &Db) -> DbResult<Vec<ConfigurationView>> {
                JOIN items ri ON ri.id = c.result_item_id
               ORDER BY c.name COLLATE NOCASE",
         )?;
-        let heads: Vec<(i64, String, Option<String>, i64, String, String, Option<String>, i64)> =
+        let heads: Vec<ConfigurationRow> =
             stmt.query_map([], |row| {
                 Ok((
                     row.get(0)?,
@@ -415,7 +429,12 @@ pub fn disassemble_configuration(
     disassemble(&db, configuration_id, quantity, location_id)
 }
 
-pub fn disassemble(db: &Db, configuration_id: i64, quantity: i64, location_id: i64) -> DbResult<i64> {
+pub fn disassemble(
+    db: &Db,
+    configuration_id: i64,
+    quantity: i64,
+    location_id: i64,
+) -> DbResult<i64> {
     if quantity <= 0 {
         return Err(DbError("Количество должно быть больше нуля".to_string()));
     }
