@@ -19,6 +19,24 @@ import { createTag, validateComponent } from "@/lib/db";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
+/**
+ * Значения, которыми открывается форма.
+ *
+ * Используется при сканировании штрихкода: известное про товар подставляется
+ * сразу, человеку остаётся указать сколько и куда.
+ */
+export interface AddItemPrefill {
+  name?: string;
+  category?: string;
+  price?: number | null;
+  description?: string | null;
+  url?: string | null;
+  imageUrl?: string | null;
+  barcode?: string | null;
+  /** Задан, если штрихкод опознан: тогда это поступление, а не новая позиция. */
+  existingItemId?: number;
+}
+
 interface AddItemDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -26,9 +44,10 @@ interface AddItemDialogProps {
   tags: { id: number; name: string }[];
   onAddItem: (item: Omit<InventoryItem, 'id'>, tagIds?: number[]) => void | Promise<void>;
   onAddCategory: (category: string) => void;
+  prefill?: AddItemPrefill | null;
 }
 
-export const AddItemDialog = ({ open, onOpenChange, categories, tags, onAddItem, onAddCategory }: AddItemDialogProps) => {
+export const AddItemDialog = ({ open, onOpenChange, categories, tags, onAddItem, onAddCategory, prefill }: AddItemDialogProps) => {
   const [formData, setFormData] = useState({
     name: "",
     category: "",
@@ -50,9 +69,29 @@ export const AddItemDialog = ({ open, onOpenChange, categories, tags, onAddItem,
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Товар считается известным, если штрихкод опознан: тогда форма работает как
+  // поступление на склад, а не как заведение новой позиции.
+  const isReceipt = prefill?.existingItemId != null;
+
   useEffect(() => {
-    if (open) setValidationErrors([]);
-  }, [open]);
+    if (!open) return;
+    setValidationErrors([]);
+    if (!prefill) return;
+    // Количество и место не подставляются намеренно: именно их человек и
+    // указывает после сканирования.
+    setFormData((prev) => ({
+      ...prev,
+      name: prefill.name ?? prev.name,
+      category: prefill.category ?? prev.category,
+      price: prefill.price != null ? String(prefill.price) : prev.price,
+      description: prefill.description ?? prev.description,
+      url: prefill.url ?? prev.url,
+      imageUrl: prefill.imageUrl ?? prev.imageUrl,
+      barcode: prefill.barcode ?? prev.barcode,
+      quantity: "",
+      location: "",
+    }));
+  }, [open, prefill]);
 
   const allTagsForSelect = [...tags, ...createdTagsInSession.filter((t) => !tags.some((x) => x.id === t.id))];
   const filteredTags = tagFilter.trim()
@@ -191,9 +230,11 @@ export const AddItemDialog = ({ open, onOpenChange, categories, tags, onAddItem,
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[720px]">
         <DialogHeader>
-          <DialogTitle>Добавить товар</DialogTitle>
+          <DialogTitle>{isReceipt ? "Поступление товара" : "Добавить товар"}</DialogTitle>
           <DialogDescription>
-            Заполните информацию о новом товаре на складе
+            {isReceipt
+              ? "Штрихкод опознан. Укажите, сколько поступило и на какой склад"
+              : "Заполните информацию о новом товаре на складе"}
           </DialogDescription>
         </DialogHeader>
         
@@ -451,7 +492,9 @@ export const AddItemDialog = ({ open, onOpenChange, categories, tags, onAddItem,
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="transition-all duration-200 hover:scale-105">
               Отмена
             </Button>
-            <Button type="submit" className="transition-all duration-200 hover:scale-105">Добавить товар</Button>
+            <Button type="submit" className="transition-all duration-200 hover:scale-105">
+              {isReceipt ? "Оприходовать" : "Добавить товар"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

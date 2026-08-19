@@ -2,13 +2,13 @@ import Sidebar from "@/components/layout/Sidebar";
 import TopBar from "@/components/layout/TopBar";
 import { FilterBar } from "@/components/inventory/FilterBar";
 import InventoryTable, { InventoryItem } from "@/components/inventory/InventoryTable";
-import AddItemDialog from "@/components/inventory/AddItemDialog";
+import AddItemDialog, { type AddItemPrefill } from "@/components/inventory/AddItemDialog";
 import { ItemBriefInfo } from "@/components/inventory/ItemBriefInfo";
 import UniversalBackground from "@/components/UniversalBackground";
 import Seo from "@/components/seo/Seo";
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { upsertComponent, createCategory, setComponentTags } from "@/lib/db";
+import { upsertComponent, createCategory, setComponentTags, addComponentGroup } from "@/lib/db";
 import { toast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/services/errorHandler";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
@@ -59,12 +59,35 @@ const Index = () => {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
 
+  // Сканирование ведёт в окно добавления: и для известного товара, и для
+  // неизвестного человек делает одно и то же — указывает сколько и куда.
+  // Разница лишь в том, что известное подставляется само.
+  const [addPrefill, setAddPrefill] = useState<AddItemPrefill | null>(null);
+
+  const openAddWithPrefill = useCallback((prefill: AddItemPrefill | null) => {
+    setAddPrefill(prefill);
+    setShowAddDialog(true);
+    setShowBarcodeScanner(false);
+  }, []);
+
   const onItemFound = useCallback((item: InventoryItem) => {
-    navigate(`/item/${item.id}`);
-  }, [navigate]);
+    openAddWithPrefill({
+      existingItemId: item.id,
+      name: item.name,
+      category: item.category,
+      price: item.price ?? null,
+      description: item.description ?? null,
+      barcode: item.barcode ?? null,
+    });
+  }, [openAddWithPrefill]);
+
+  const onItemNotFound = useCallback((barcode: string) => {
+    openAddWithPrefill({ barcode });
+  }, [openAddWithPrefill]);
 
   const { handleBarcodeScan } = useBarcodeScanner({
     onItemFound,
+    onItemNotFound,
   });
 
   // Listen for the custom event to open add dialog
@@ -117,7 +140,17 @@ const Index = () => {
     setAddingItem(true);
     let step = "сохранение товара в базу";
     try {
-      const id = await upsertComponent(newItem as any);
+      // Если штрихкод опознан, позиция уже есть: нужно оприходовать
+      // количество на склад, а не заводить вторую такую же карточку.
+      const id = addPrefill?.existingItemId
+        ? await addComponentGroup({
+            componentId: addPrefill.existingItemId,
+            name: "Поступление по штрихкоду",
+            location: newItem.location,
+            quantity: newItem.quantity,
+            price: newItem.price,
+          }).then(() => addPrefill.existingItemId!)
+        : await upsertComponent(newItem as any);
       step = "назначение тегов";
       if (id && tagIds?.length) {
         await setComponentTags(id, tagIds);
@@ -207,11 +240,15 @@ const Index = () => {
 
       <AddItemDialog
         open={showAddDialog}
-        onOpenChange={setShowAddDialog}
+        onOpenChange={(open) => {
+          setShowAddDialog(open);
+          if (!open) setAddPrefill(null);
+        }}
         categories={categories}
         tags={tags}
         onAddItem={handleAddItem}
         onAddCategory={handleAddCategory}
+        prefill={addPrefill}
       />
 
       <BarcodeScanner

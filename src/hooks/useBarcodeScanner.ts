@@ -1,17 +1,20 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { getComponents } from "@/lib/db";
 import { InventoryItem } from "@/components/inventory/InventoryTable";
 import { toast } from "@/hooks/use-toast";
 
 export interface UseBarcodeScannerOptions {
-  /** При находке товара — открыть полную карточку вместо диалога редактирования */
+  /** Штрихкод опознан: товар уже заведён. */
   onItemFound?: (item: InventoryItem) => void;
+  /** Штрихкод неизвестен: товара с таким кодом на складе нет. */
+  onItemNotFound?: (barcode: string) => void;
 }
 
 export const useBarcodeScanner = (options?: UseBarcodeScannerOptions) => {
   const [scannedItem, setScannedItem] = useState<InventoryItem | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const onItemFound = options?.onItemFound;
+  const onItemNotFound = options?.onItemNotFound;
 
   const searchByBarcode = useCallback(async (barcode: string): Promise<InventoryItem | null> => {
     try {
@@ -42,25 +45,37 @@ export const useBarcodeScanner = (options?: UseBarcodeScannerOptions) => {
       setScannedItem(item);
       if (onItemFound) {
         onItemFound(item);
-        toast({
-          title: "Товар найден",
-          description: `Открыта карточка: ${item.name}`,
-        });
       } else {
         setIsDialogOpen(true);
-        toast({
-          title: "Товар найден",
-          description: `Найден товар: ${item.name}`,
-        });
       }
+      toast({
+        title: "Штрихкод опознан",
+        description: `${item.name} — укажите, сколько поступило и куда`,
+      });
+    } else if (onItemNotFound) {
+      // Неизвестный штрихкод — это не ошибка, а повод завести новую позицию:
+      // код подставляется в форму, остальное человек заполняет сам.
+      onItemNotFound(barcode);
+      toast({
+        title: "Новый штрихкод",
+        description: "Такого товара ещё нет — заполните карточку",
+      });
     } else {
       toast({
         title: "Товар не найден",
-        description: `Товар со штрихкодом "${barcode}" не найден в базе данных`,
+        description: `Товар со штрихкодом "${barcode}" не найден`,
         variant: "destructive",
       });
     }
-  }, [searchByBarcode, onItemFound]);
+  }, [searchByBarcode, onItemFound, onItemNotFound]);
+
+  // Обработчик держим в ссылке: перехватчик клавиатуры вешается один раз, и
+  // без этого он навсегда запомнил бы версию с первого рендера — то есть
+  // сканирование продолжало бы вызывать устаревшие onItemFound/onItemNotFound.
+  const scanRef = useRef(handleBarcodeScan);
+  useEffect(() => {
+    scanRef.current = handleBarcodeScan;
+  }, [handleBarcodeScan]);
 
   // Глобальный обработчик для быстрого ввода штрихкода
   useEffect(() => {
@@ -91,7 +106,7 @@ export const useBarcodeScanner = (options?: UseBarcodeScannerOptions) => {
       // Если нажат Enter и буфер не пустой, ищем товар
       if (e.key === 'Enter' && barcodeBuffer.length >= 3) {
         e.preventDefault();
-        handleBarcodeScan(barcodeBuffer);
+        scanRef.current(barcodeBuffer);
         barcodeBuffer = "";
       }
     };
