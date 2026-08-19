@@ -16,7 +16,11 @@ import { Wrench, Plus, Save, Copy, Trash2, Package, Banknote, Calculator, CheckC
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { getConfigurations, getConfigurationComponents, createConfiguration, deleteConfiguration, getAssembledCounts, assembleConfiguration, disassembleConfiguration, writeOffConfiguration, updateConfiguration } from "@/lib/db";
 import { formatCurrency } from "@/lib/utils";
-import type { RecipeComponent } from "@/lib/calculator";
+import {
+  calculateConfigurationAvailability,
+  type AvailabilityStatus,
+  type RecipeComponent,
+} from "@/lib/calculator";
 import type { InventoryItem } from "@/components/inventory/InventoryTable";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -175,42 +179,13 @@ const Configurations = () => {
     return { totalValue, totalItems };
   };
 
-  type AvailabilityStatus = 'available' | 'partial' | 'unavailable' | 'missing';
-  interface AvailabilityItem {
-    componentId: number;
-    quantity: number;
-    name: string;
-    available: number;
-    required: number;
-    status: AvailabilityStatus;
-    stockComponent: InventoryItem | null;
-  }
-
-  const checkConfigurationAvailability = (config: ConfigurationRow) => {
-    const availability: AvailabilityItem[] = config.components.map(
-      (comp: { componentId: number; quantity: number; name: string }) => {
-      const stockComponent = components.find(c => c.id === comp.componentId);
-      if (!stockComponent) return { ...comp, available: 0, required: comp.quantity, status: 'missing' as const, stockComponent: null } as AvailabilityItem;
-      // Резервирования больше нет: доступно то, что на складе.
-      const available = stockComponent.quantity;
-      const required = comp.quantity;
-      const status: AvailabilityStatus = available >= required ? 'available' : available > 0 ? 'partial' : 'unavailable';
-      return { ...comp, available, required, status, stockComponent } as AvailabilityItem;
-    });
-
-    const allAvailable = availability.every(item => item.status === 'available');
-    const anyAvailable = availability.some(item => item.status === 'available');
-    const noneAvailable = availability.every(item => item.status === 'unavailable');
-
-    return {
-      items: availability,
-      allAvailable,
-      anyAvailable,
-      noneAvailable,
-      availableCount: availability.filter(item => item.status === 'available').length,
-      totalCount: availability.length
-    };
-  };
+  // Расчёт доступности здесь был написан второй раз — тем же по смыслу, но
+  // своими словами, и с собственным перебором склада на каждый компонент.
+  // Проект уже обжигался на таких копиях: три разошедшихся копии разбора
+  // документов привели к тому, что на карточке товара не показывался ни один.
+  // Теперь считает общая функция из lib/calculator.
+  const checkConfigurationAvailability = (config: ConfigurationRow) =>
+    calculateConfigurationAvailability(config, components);
 
   const getAvailabilityIcon = (status: 'available' | 'partial' | 'unavailable' | 'missing') => {
     switch (status) {
@@ -306,12 +281,9 @@ const Configurations = () => {
     };
   }, [configurations, components]);
 
-  const getMaxBuilds = (config: ConfigurationRow) => {
-    const availability = checkConfigurationAvailability(config);
-    if (availability.items.length === 0) return 0;
-    const limits = availability.items.map(i => Math.floor(i.available / i.required));
-    return Math.max(0, Math.min(...limits));
-  };
+  // Столько же считает и сама функция доступности — берём готовое.
+  const getMaxBuilds = (config: ConfigurationRow) =>
+    checkConfigurationAvailability(config).maxPossibleBuilds;
 
   const filteredConfigurations = useMemo(() => {
     const list = configurations.filter(config => {

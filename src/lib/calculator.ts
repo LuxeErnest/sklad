@@ -47,6 +47,24 @@ export interface ConfigurationAvailability {
 }
 
 /**
+ * Указатель «идентификатор позиции → позиция» для одного и того же списка.
+ *
+ * Расчёт вызывается по разу на конфигурацию, а внутри искал компонент перебором
+ * всего склада — то есть работа росла как произведение числа конфигураций на
+ * число позиций. Указатель строится один раз на список и переиспользуется, пока
+ * список тот же: WeakMap отпускает его вместе с самим списком.
+ */
+const stockIndexCache = new WeakMap<StockItem[], Map<number, StockItem>>();
+
+function stockIndex(stock: StockItem[]): Map<number, StockItem> {
+  const cached = stockIndexCache.get(stock);
+  if (cached) return cached;
+  const index = new Map(stock.map((item) => [item.id, item]));
+  stockIndexCache.set(stock, index);
+  return index;
+}
+
+/**
  * Считает, из чего и сколько можно собрать.
  *
  * Доступным считается весь остаток на складах. Вычитания «зарезервированного»
@@ -57,8 +75,9 @@ export function calculateConfigurationAvailability(
   config: { components: RecipeComponent[]; totalValue?: number },
   stock: StockItem[]
 ): ConfigurationAvailability {
+  const index = stockIndex(stock);
   const items: AvailabilityItem[] = config.components.map((comp) => {
-    const stockComponent = stock.find((c) => c.id === comp.componentId) ?? null;
+    const stockComponent = index.get(comp.componentId) ?? null;
     if (!stockComponent) {
       return {
         ...comp,
@@ -119,8 +138,9 @@ export function calculateManualTotals(
   selected: Record<number, number>,
   stock: StockItem[]
 ): ManualTotals {
+  const index = stockIndex(stock);
   const entries = Object.entries(selected).map(([id, quantity]) => ({
-    item: stock.find((i) => i.id === parseInt(id, 10)),
+    item: index.get(parseInt(id, 10)),
     quantity,
   }));
 
