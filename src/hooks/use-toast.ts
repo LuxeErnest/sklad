@@ -4,6 +4,7 @@ import type {
   ToastActionElement,
   ToastProps,
 } from "@/components/ui/toast"
+import { preferences } from "@/lib/preferences"
 
 const TOAST_LIMIT = 1
 const TOAST_REMOVE_DELAY = 1000000
@@ -141,6 +142,12 @@ type Toast = Omit<ToasterToast, "id">
 
 function toast({ ...props }: Toast) {
   const id = genId()
+
+  // Сообщения об успехе можно отключить в настройках, сообщения об ошибках —
+  // нет: скрыть от человека, что действие не выполнилось, значит соврать ему.
+  if (props.variant !== "destructive" && !preferences().successToasts) {
+    return { id, dismiss: () => undefined, update: () => undefined }
+  }
 
   const update = (props: ToasterToast) =>
     dispatch({

@@ -9,9 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Pencil, Trash2, Plus, Search, Filter, FolderTree, Tag, Archive } from "lucide-react";
+import { Pencil, Trash2, FolderTree, Tag, Archive } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,7 +27,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 
-import { upsertComponent, archiveComponent, addScrappedItem, getComponentGroups, scrapFromLocation, scrapAllFromAllLocations } from "@/lib/db";
+import { archiveComponent, addScrappedItem, getComponentGroups, scrapFromLocation, scrapAllFromAllLocations } from "@/lib/db";
 import { updateItem } from "@/services/inventoryService";
 import { logAndFormatError, getErrorMessage } from "@/services/errorHandler";
 import { toast } from "@/hooks/use-toast";
@@ -36,11 +36,6 @@ import { useSearchParams } from "react-router-dom";
 import { CategoriesModal } from "@/components/edit/CategoriesModal";
 import { TagsModal } from "@/components/edit/TagsModal";
 import { TagsManager } from "@/components/settings/TagsManager";
-// Fallback mock only if DB empty
-const mockItems = [
-  { id: 1, name: "SSD 1TB", quantity: 12, category: "Накопители", location: "Склад А-12", lastUpdated: "2025-08-01", description: "Твердотельный накопитель 1TB", website: "https://example.com/ssd", price: 150 },
-];
-
 const formSchema = z.object({
   name: z.string().min(1, "Название обязательно"),
   quantity: z.number().min(0, "Количество не может быть отрицательным"),

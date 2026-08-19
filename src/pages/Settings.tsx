@@ -3,13 +3,15 @@ import TopBar from "@/components/layout/TopBar";
 import UniversalBackground from "@/components/UniversalBackground";
 import Seo from "@/components/seo/Seo";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
+
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Settings, Database, Bell, Shield, Palette, Save } from "lucide-react";
+import { Settings, Database } from "lucide-react";
 import { useState } from "react";
+import { useTheme } from "next-themes";
+import { usePreference } from "@/lib/preferences";
 import { StatusCard } from "@/components/database/StatusCard";
 import { StorageCard } from "@/components/database/StorageCard";
 import { BackupCard } from "@/components/database/BackupCard";
@@ -19,9 +21,13 @@ import { LocationsCard } from "@/components/database/LocationsCard";
 
 const SettingsPage = () => {
   const [search, setSearch] = useState("");
-  const [notifications, setNotifications] = useState(true);
-  const [autoSave, setAutoSave] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
+
+  // Настройки берутся оттуда, где они на самом деле хранятся: тема — из
+  // next-themes, остальное — из настроек интерфейса в localStorage. Раньше все
+  // три жили в useState этой страницы: сбрасывались при переходе на другой
+  // экран и ни на что не влияли.
+  const { theme, setTheme } = useTheme();
+  const [successToasts, setSuccessToasts] = usePreference("successToasts");
 
   const summary = { 
     name: "Настройки", 
@@ -56,7 +62,7 @@ const SettingsPage = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div>
               {/* Общие настройки */}
               <Card>
                 <CardHeader>
@@ -69,142 +75,30 @@ const SettingsPage = () => {
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
-                      <Label>Автосохранение</Label>
+                      <Label>Сообщения об успешных действиях</Label>
                       <p className="text-sm text-muted-foreground">
-                        Автоматически сохранять изменения
+                        Всплывающие подтверждения после сохранения и списания.
+                        Сообщения об ошибках показываются всегда.
                       </p>
                     </div>
                     <Switch
-                      checked={autoSave}
-                      onCheckedChange={setAutoSave}
+                      checked={successToasts}
+                      onCheckedChange={setSuccessToasts}
                     />
                   </div>
-                  
+
                   <Separator />
-                  
+
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
-                      <Label>Уведомления</Label>
+                      <Label>Тёмная тема</Label>
                       <p className="text-sm text-muted-foreground">
-                        Получать уведомления о событиях
+                        То же, что и переключатель в шапке
                       </p>
                     </div>
                     <Switch
-                      checked={notifications}
-                      onCheckedChange={setNotifications}
-                    />
-                  </div>
-                  
-                  <Separator />
-                  
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>Темная тема</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Использовать темную тему интерфейса
-                      </p>
-                    </div>
-                    <Switch
-                      checked={darkMode}
-                      onCheckedChange={setDarkMode}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-
-
-              {/* Настройки безопасности */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Shield className="h-5 w-5" />
-                    Безопасность
-                  </CardTitle>
-                  <CardDescription>Настройки безопасности и доступа</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="session-timeout">Таймаут сессии (минуты)</Label>
-                    <Input
-                      id="session-timeout"
-                      type="number"
-                      placeholder="30"
-                      defaultValue="30"
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="max-login-attempts">Максимум попыток входа</Label>
-                    <Input
-                      id="max-login-attempts"
-                      type="number"
-                      placeholder="5"
-                      defaultValue="5"
-                    />
-                  </div>
-                  
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>Двухфакторная аутентификация</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Требовать 2FA для входа
-                      </p>
-                    </div>
-                    <Switch />
-                  </div>
-                  
-                  <Button variant="outline" className="w-full">
-                    Изменить пароль
-                  </Button>
-                </CardContent>
-              </Card>
-
-              {/* Настройки уведомлений */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Bell className="h-5 w-5" />
-                    Уведомления
-                  </CardTitle>
-                  <CardDescription>Настройки уведомлений и оповещений</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>Низкий запас</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Уведомления о низком количестве
-                      </p>
-                    </div>
-                    <Switch defaultChecked />
-                  </div>
-                  
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>Новые поставки</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Уведомления о новых поставках
-                      </p>
-                    </div>
-                    <Switch defaultChecked />
-                  </div>
-                  
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>Отчеты</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Еженедельные отчеты по email
-                      </p>
-                    </div>
-                    <Switch />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email для уведомлений</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="admin@company.com"
+                      checked={theme === "dark"}
+                      onCheckedChange={(on) => setTheme(on ? "dark" : "light")}
                     />
                   </div>
                 </CardContent>
@@ -253,22 +147,12 @@ const SettingsPage = () => {
                       бросает 'External database not implemented yet';
                     — «Дополнить базу»: вызывала команду merge_sqlite_into_current,
                       которой в Rust не существует, то есть падала всегда.
-                    Вернуть их имеет смысл вместе с реальной реализацией в Фазе 2.
+                    Вернуть их имеет смысл только вместе с настоящей реализацией.
                   */}
                 </div>
               </CardContent>
             </Card>
 
-            {/* Кнопки действий */}
-            <div className="flex justify-end gap-4">
-              <Button variant="outline" className="transition-all duration-200 hover:scale-105">
-                Сбросить настройки
-              </Button>
-              <Button className="transition-all duration-200 hover:scale-105">
-                <Save className="h-4 w-4 mr-2" />
-                Сохранить все настройки
-              </Button>
-            </div>
           </main>
         </div>
       </div>

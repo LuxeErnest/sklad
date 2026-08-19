@@ -11,7 +11,7 @@ import { useState } from "react";
 const ProductCardPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { items, categories, refreshItems, getItemById } = useApp();
+  const { categories, refreshItems, getItemById } = useApp();
   const [search, setSearch] = useState("");
 
   const itemId = id ? parseInt(id, 10) : NaN;

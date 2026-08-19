@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Package, ExternalLink } from "lucide-react";
 import { useApp } from "@/contexts/AppContext";
-import { InventoryItem } from "@/components/inventory/InventoryTable";
+
 
 interface ItemLinkProps {
   itemId: number;

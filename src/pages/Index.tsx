@@ -7,7 +7,7 @@ import { ItemBriefInfo } from "@/components/inventory/ItemBriefInfo";
 import UniversalBackground from "@/components/UniversalBackground";
 import Seo from "@/components/seo/Seo";
 import { useMemo, useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+
 import { upsertComponent, createCategory, setComponentTags, addComponentGroup, setComponentBarcode } from "@/lib/db";
 import { toast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/services/errorHandler";
@@ -36,8 +36,7 @@ function categoryNamesWithDescendants(tree: { name: string; children: { name: st
 }
 
 const Index = () => {
-  const navigate = useNavigate();
-  const { items, categories, categoryTree, tags, refreshItems, totalAssembledCount, assembledConfigurations } = useApp();
+  const { items, categories, categoryTree, tags, refreshItems, assembledConfigurations } = useApp();
   const [addingItem, setAddingItem] = useState(false);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string | null>(null);

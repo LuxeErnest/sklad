@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TabsContent } from "@/components/ui/tabs";
-import { FileText, Trash2, XCircle } from "lucide-react";
+import { FileText, XCircle } from "lucide-react";
 import { exportRowsToXlsx, datedFileName } from "@/lib/exportXlsx";
 
 interface ScrapRecord {

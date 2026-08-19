@@ -3,7 +3,7 @@
  * Централизует бизнес-логику работы с товарами
  */
 
-import { getComponents, upsertComponent, archiveComponent, restoreComponent, getComponentGroups, scrapFromLocation, scrapAllFromAllLocations } from "@/lib/db";
+import { upsertComponent } from "@/lib/db";
 import { InventoryItem } from "@/components/inventory/InventoryTable";
 import { formatItemUpdateError } from "@/services/errorHandler";
 

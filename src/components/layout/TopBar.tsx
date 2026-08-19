@@ -53,7 +53,6 @@ export const TopBar = ({ search, onSearch, summary, onBarcodeScan, tags = [] }: 
             <ScanLine className="h-4 w-4" />
           </Button>
         )}
-        <Button variant="hero">Найти</Button>
         <ThemeToggle />
       </div>
       {summary && (

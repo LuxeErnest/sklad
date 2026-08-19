@@ -2,12 +2,17 @@ import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
+
 import { Separator } from "@/components/ui/separator";
 import { TabsContent } from "@/components/ui/tabs";
 import {
-  AlertTriangle, Banknote, BarChart3, CheckCircle, FileText, Package,
-  Target, TrendingDown, TrendingUp, XCircle,
+  Banknote,
+  CheckCircle,
+  FileText,
+  Package,
+  Target,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react";
 import { exportRowsToXlsx, datedFileName } from "@/lib/exportXlsx";
 import { ItemLink } from "@/components/common/ItemLink";
@@ -37,7 +42,6 @@ interface AnalyticsTabProps {
   calculateConfigurationAvailability: (config: AnalyticsConfiguration) => ConfigurationAvailability;
   showDetailedAnalytics: boolean;
   setShowDetailedAnalytics: Dispatch<SetStateAction<boolean>>;
-  showPlanningStats: boolean;
   getPriorityBadge: (priority: string) => ReactNode;
 }
 
@@ -56,7 +60,6 @@ export const AnalyticsTab = ({
   calculateConfigurationAvailability,
   showDetailedAnalytics,
   setShowDetailedAnalytics,
-  showPlanningStats,
   getPriorityBadge,
 }: AnalyticsTabProps) => {
   const downloadWarehouseReport = () =>
@@ -226,7 +229,12 @@ export const AnalyticsTab = ({
 
 
      {/* Planning Statistics Section */}
-     {showPlanningStats && (
+     {/*
+       Карточка показывается всегда. Раньше она была за флагом showPlanningStats,
+       который создавался со значением false и никогда не менялся: переключить
+       его было нечем, а значит и увидеть карточку — тоже. Вместе с ней была
+       недостижима единственная кнопка выгрузки отчёта по складу в Excel.
+     */}
        <Card>
          <CardHeader>
            <CardTitle>Статистика планирования</CardTitle>
@@ -269,7 +277,6 @@ export const AnalyticsTab = ({
            </div>
          </CardContent>
        </Card>
-     )}
 
      {/* Enhanced Analytics Section */}
      <Card>

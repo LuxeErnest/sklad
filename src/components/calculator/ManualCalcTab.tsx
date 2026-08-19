@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { TabsContent } from "@/components/ui/tabs";
-import { AlertTriangle, Banknote, Copy, Package, Save, Search, Target, TrendingUp } from "lucide-react";
+import { Banknote, Package, TrendingUp } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { ItemLink } from "@/components/common/ItemLink";
 import type { ManualTotals, StockItem } from "@/lib/calculator";
@@ -24,7 +24,6 @@ interface ManualCalcTabProps {
   setSelectedCategory: (value: string) => void;
   updateQuantity: (itemId: number, quantity: number) => void;
   clearSelections: () => void;
-  saveCalculation: () => void;
   setShowDetailedAnalytics: Dispatch<SetStateAction<boolean>>;
 }
 
@@ -46,7 +45,6 @@ export const ManualCalcTab = ({
   setSelectedCategory,
   updateQuantity,
   clearSelections,
-  saveCalculation,
   setShowDetailedAnalytics,
 }: ManualCalcTabProps) => (
   <TabsContent value="manual" className="space-y-6">
@@ -224,14 +222,6 @@ export const ManualCalcTab = ({
                 variant="outline"
               >
                 Очистить
-              </Button>
-              <Button 
-                className="flex-1 transition-all duration-200 hover:scale-105"
-                onClick={saveCalculation}
-                disabled={Object.keys(selectedItems).length === 0}
-              >
-                <Save className="h-4 w-4 mr-2" />
-                Сохранить
               </Button>
             </div>
           </CardContent>

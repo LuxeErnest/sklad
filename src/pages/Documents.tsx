@@ -9,10 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { FileText, Plus, Upload, Download, Search, Filter, Link, Calendar, User, Trash2, Eye, ExternalLink } from "lucide-react";
+import { FileText, Upload, Download, Filter, Link, Trash2, Eye } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -57,7 +57,6 @@ const Documents = () => {
   // Hooks must be called at the top level
   const context = useApp();
   const items: InventoryItem[] = context?.items || [];
-  const refreshItems = context?.refreshItems;
   
   const { confirm, dialog } = useConfirm();
   const [searchParams] = useSearchParams();
@@ -194,7 +193,6 @@ const Documents = () => {
   }, [items]);
 
   const categories = useMemo(() => Array.from(new Set(documents.map(doc => doc.category))), [documents]);
-  const componentCategories = useMemo(() => Array.from(new Set(components.map(comp => comp.category))), [components]);
 
   const filteredDocuments = useMemo(() => {
     if (!Array.isArray(documents)) {

@@ -1,10 +1,10 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, CheckCircle, XCircle, HardDrive, AlertTriangle, Activity } from "lucide-react";
+import { RefreshCw, CheckCircle, XCircle, HardDrive, Activity } from "lucide-react";
 import { useState, useEffect } from "react";
 import { getDatabaseHealth } from "@/lib/db";
-import { toast } from "@/hooks/use-toast";
+
 
 export const StatusCard = () => {
   const [status, setStatus] = useState<'healthy' | 'error' | 'browser_mode' | 'loading'>('loading');

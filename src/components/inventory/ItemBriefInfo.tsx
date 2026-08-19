@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Package, DollarSign, Calendar, FileText, Download, ChevronRight } from "lucide-react";
 import { getCertificatesByComponentId, readDocument } from "@/lib/db";
 import { InventoryItem } from "./InventoryTable";
-import { useApp } from "@/contexts/AppContext";
+
 
 const getMimeFromExtension = (ext: string) => {
   const e = (ext || '').toLowerCase();

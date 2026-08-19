@@ -8,11 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
 import { Separator } from "@/components/ui/separator";
-import { Wrench, Plus, Save, Copy, Trash2, Package, Banknote, Calculator, CheckCircle, AlertCircle, XCircle, PackageOpen, RotateCcw } from "lucide-react";
+import { Wrench, Plus, Save, Trash2, Package, Banknote, Calculator, CheckCircle, AlertCircle, XCircle, PackageOpen, RotateCcw } from "lucide-react";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { getConfigurations, getConfigurationComponents, createConfiguration, deleteConfiguration, getAssembledCounts, assembleConfiguration, disassembleConfiguration, writeOffConfiguration, updateConfiguration } from "@/lib/db";
 import { formatCurrency } from "@/lib/utils";
@@ -21,7 +20,7 @@ import {
   type AvailabilityStatus,
   type RecipeComponent,
 } from "@/lib/calculator";
-import type { InventoryItem } from "@/components/inventory/InventoryTable";
+
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -56,7 +55,6 @@ const Configurations = () => {
   const { confirm, dialog } = useConfirm();
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [configurations, setConfigurations] = useState<ConfigurationRow[]>(NO_CONFIGURATIONS);
   const [assembledCounts, setAssembledCounts] = useState<Record<number, number>>({});
   const [selectedConfiguration, setSelectedConfiguration] = useState<ConfigurationRow | null>(null);
@@ -137,14 +135,6 @@ const Configurations = () => {
     };
   }, [loadConfigurations]);
 
-  const filteredComponents = useMemo(() => {
-    return components.filter(item => {
-      const matchSearch = item.name.toLowerCase().includes(search.toLowerCase());
-      const matchCategory = categoryFilter === "all" || item.category === categoryFilter;
-      return matchSearch && matchCategory;
-    });
-  }, [search, categoryFilter]);
-
   const filteredComponentsForCreation = useMemo(() => {
     return components.filter(item => {
       const matchSearch = item.name.toLowerCase().includes(componentSearch.toLowerCase());
@@ -212,7 +202,6 @@ const Configurations = () => {
   };
 
   const handleCreateConfiguration = async (data: FormData) => {
-    const { totalValue, totalItems } = calculateTotals(selectedComponents);
     const componentsPayload = Object.entries(selectedComponents).map(([componentId, quantity]) => ({
       componentId: Number(componentId),
       quantity,

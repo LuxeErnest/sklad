@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getSupplyRecordsByComponentId, getScrappedItemsByComponentId, getComponentPaths } from "@/lib/db";
 import { Package, Truck, Trash2, Calendar } from "lucide-react";

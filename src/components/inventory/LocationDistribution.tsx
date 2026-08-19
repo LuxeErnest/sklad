@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { toast } from "@/hooks/use-toast";
 import {
   Plus,
@@ -19,10 +19,8 @@ import {
   ChevronRight,
   ArrowDown,
   Truck,
-  Factory,
   Warehouse,
   DollarSign,
-  Edit,
   ArrowRight,
   ShoppingCart,
   Trash2,

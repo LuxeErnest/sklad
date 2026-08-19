@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Palette, Moon, Sun, Sparkles, Stars } from 'lucide-react';
+import { Moon, Sun, Sparkles, Stars } from 'lucide-react';
 // import { useGlassmorphism } from '@/hooks/useGlassmorphism';
 
 type Theme = 'dark' | 'light' | 'glassmorphism' | 'neoglass';

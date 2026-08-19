@@ -2,26 +2,22 @@ import Sidebar from "@/components/layout/Sidebar";
 import TopBar from "@/components/layout/TopBar";
 import UniversalBackground from "@/components/UniversalBackground";
 import Seo from "@/components/seo/Seo";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calculator as CalcIcon, Banknote, Package, BarChart3, AlertTriangle, XCircle } from "lucide-react";
 import { useState, useMemo, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { 
-  getComponentUsageHistory, 
-  getConfigurationBuilds, 
+
+import {
   getWarehouseStatistics,
   getConfigurations,
   getConfigurationComponents,
-  assembleConfiguration
 } from "@/lib/db";
 import { formatCurrency } from "@/lib/utils";
 import type { WarehouseStatistics } from "@/lib/generated";
 import type { ScrappedRow } from "@/lib/db";
 import {
-  type AvailabilityStatus,
   type RecipeComponent,
   calculateConfigurationAvailability as calcAvailability,
   calculateManualTotals as calcManualTotals,
@@ -29,7 +25,7 @@ import {
   type StockItem,
 } from "@/lib/calculator";
 import { useApp } from "@/contexts/AppContext";
-import { toast } from "@/hooks/use-toast";
+
 import { AnalyticsTab, type AnalyticsConfiguration } from "@/components/calculator/AnalyticsTab";
 import { ScrapTab } from "@/components/calculator/ScrapTab";
 import { ManualCalcTab } from "@/components/calculator/ManualCalcTab";
@@ -49,16 +45,13 @@ interface ConfigurationRow {
 const NO_CONFIGURATIONS: ConfigurationRow[] = [];
 
 const Calculator = () => {
-  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedItems, setSelectedItems] = useState<{[key: number]: number}>({});
   const [activeTab, setActiveTab] = useState("analytics");
-  const { items, categories, refreshItems } = useApp();
-  const [isLoading, setIsLoading] = useState(false);
+  const { items, categories } = useApp();
   const [configurations, setConfigurations] = useState<ConfigurationRow[]>(NO_CONFIGURATIONS);
   const [warehouseStats, setWarehouseStats] = useState<Partial<WarehouseStatistics>>({});
-  const [showPlanningStats, setShowPlanningStats] = useState(false);
   const [showDetailedAnalytics, setShowDetailedAnalytics] = useState(true);
   const [scrappedItems, setScrappedItems] = useState<ScrappedRow[]>([]);
 
@@ -185,48 +178,6 @@ const Calculator = () => {
     setSelectedItems({});
   };
 
-  // Function to save current calculation
-  const saveCalculation = () => {
-    const calculation = {
-      id: Date.now(),
-      items: selectedItems,
-      totalValue: manualCalculations.totalValue,
-      totalItems: manualCalculations.totalItems,
-      timestamp: new Date().toISOString(),
-    };
-    // In a real app, this would save to localStorage or backend
-  };
-
-  // Function to build configuration: резервирует компоненты (сборка без списания со склада)
-  const buildConfiguration = async (config: ConfigurationRow) => {
-    const availability = calculateConfigurationAvailability(config);
-    if (availability.maxPossibleBuilds === 0) {
-      toast({ title: "Недостаточно компонентов", description: "Для сборки этой конфигурации не хватает остатков", variant: "destructive" });
-      return;
-    }
-    setIsLoading(true);
-    try {
-      const res = await assembleConfiguration({
-        configurationId: config.id,
-        quantity: availability.maxPossibleBuilds,
-        notes: 'Сборка из калькулятора',
-      });
-      if (res.success) {
-        await loadData();
-        refreshItems();
-        toast({ title: "Сборка выполнена", description: `«${config.name}» — ${availability.maxPossibleBuilds} шт. Компоненты списаны со складов.` });
-      } else {
-        toast({ title: "Не удалось собрать", description: res.error || "Ошибка при сборке конфигурации", variant: "destructive" });
-      }
-    } catch (error) {
-      console.error('Error building configuration:', error);
-      toast({ title: "Не удалось собрать", description: "Ошибка при сборке конфигурации", variant: "destructive" });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-
   // Function to download warehouse report as Excel
   const summary = { 
     name: "Калькулятор склада", 
@@ -338,7 +289,6 @@ const Calculator = () => {
                 setSelectedCategory={setSelectedCategory}
                 updateQuantity={updateQuantity}
                 clearSelections={clearSelections}
-                saveCalculation={saveCalculation}
                 setShowDetailedAnalytics={setShowDetailedAnalytics}
               />
 
@@ -353,7 +303,6 @@ const Calculator = () => {
                 calculateConfigurationAvailability={calculateConfigurationAvailability}
                 showDetailedAnalytics={showDetailedAnalytics}
                 setShowDetailedAnalytics={setShowDetailedAnalytics}
-                showPlanningStats={showPlanningStats}
                 getPriorityBadge={getPriorityBadge}
               />
 
