@@ -212,6 +212,18 @@ pub fn register_on(db: &Db, input: &OperationInput) -> DbResult<i64> {
     db.transaction(|tx| register(tx, input))
 }
 
+/// Порядок журнала — от новых записей к старым.
+///
+/// Сортировка идёт по времени, а не по идентификатору операции: идентификаторы
+/// выдаются при вставке, а записи, перенесённые из старой базы, несут своё
+/// прежнее время и получили новые номера не в хронологическом порядке. Я успел
+/// на этом ошибиться: сортировка по номеру быстрее, но на перенесённой истории
+/// переставляла записи местами.
+///
+/// Скорость обеспечивается не порядком, а тем, как ограничивается выборка, —
+/// см. `list_operations_on`.
+const JOURNAL_ORDER: &str = " ORDER BY o.performed_at DESC, ol.id DESC";
+
 const LINE_QUERY: &str = "
     SELECT ol.id, ol.operation_id, o.kind, o.performed_at, o.performed_by, o.note,
            ol.item_id, i.name,
@@ -247,10 +259,14 @@ fn map_line(row: &rusqlite::Row) -> rusqlite::Result<OperationLineView> {
 /// История по одной позиции номенклатуры.
 #[tauri::command]
 pub fn item_history(item_id: i64, db: State<'_, Db>) -> DbResult<Vec<OperationLineView>> {
+    item_history_on(&db, item_id)
+}
+
+pub fn item_history_on(db: &Db, item_id: i64) -> DbResult<Vec<OperationLineView>> {
     db.with(|conn| {
         let sql = format!(
-            "{} WHERE ol.item_id = ?1 ORDER BY o.performed_at DESC, ol.id DESC",
-            LINE_QUERY
+            "{} WHERE ol.item_id = ?1{}",
+            LINE_QUERY, JOURNAL_ORDER
         );
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params![item_id], map_line)?;
@@ -269,11 +285,18 @@ pub fn location_journal(
     limit: Option<i64>,
     db: State<'_, Db>,
 ) -> DbResult<Vec<OperationLineView>> {
+    location_journal_on(&db, location_id, limit)
+}
+
+pub fn location_journal_on(
+    db: &Db,
+    location_id: i64,
+    limit: Option<i64>,
+) -> DbResult<Vec<OperationLineView>> {
     db.with(|conn| {
         let sql = format!(
-            "{} WHERE ol.from_location_id = ?1 OR ol.to_location_id = ?1
-             ORDER BY o.performed_at DESC, ol.id DESC LIMIT ?2",
-            LINE_QUERY
+            "{} WHERE ol.from_location_id = ?1 OR ol.to_location_id = ?1{} LIMIT ?2",
+            LINE_QUERY, JOURNAL_ORDER
         );
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params![location_id, limit.unwrap_or(500)], map_line)?;
@@ -288,11 +311,28 @@ pub fn list_operations(
     limit: Option<i64>,
     db: State<'_, Db>,
 ) -> DbResult<Vec<OperationLineView>> {
+    list_operations_on(&db, kind, limit)
+}
+
+pub fn list_operations_on(
+    db: &Db,
+    kind: Option<String>,
+    limit: Option<i64>,
+) -> DbResult<Vec<OperationLineView>> {
     db.with(|conn| {
+        // Сначала выбираются сами операции — их немного и они уже лежат в
+        // нужном порядке в индексе, поэтому LIMIT останавливает перебор сразу.
+        // Прямая сортировка соединения заставляла SQLite прочитать все строки
+        // журнала и построить временное дерево ради последних пятисот: на ста
+        // двадцати тысячах операций это триста миллисекунд на каждый показ.
         let sql = format!(
-            "{} WHERE (?1 IS NULL OR o.kind = ?1)
-             ORDER BY o.performed_at DESC, ol.id DESC LIMIT ?2",
-            LINE_QUERY
+            "{} WHERE ol.operation_id IN (
+                    SELECT id FROM operations
+                     WHERE (?1 IS NULL OR kind = ?1)
+                     ORDER BY performed_at DESC, id DESC
+                     LIMIT ?2
+                 ){}",
+            LINE_QUERY, JOURNAL_ORDER
         );
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_map(params![kind, limit.unwrap_or(500)], map_line)?;

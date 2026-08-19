@@ -115,30 +115,50 @@ pub fn list(db: &Db) -> DbResult<Vec<ConfigurationView>> {
             .collect::<rusqlite::Result<_>>()?;
         drop(stmt);
 
+        // Состав всех конфигураций забирается одним запросом и раскладывается
+        // по конфигурациям в памяти. Раньше на каждую конфигурацию готовился и
+        // выполнялся отдельный запрос — время росло вместе со списком.
+        //
+        // Остаток по-прежнему считается подзапросом на строку, а не общей
+        // группировкой по всей таблице stock: первичный ключ начинается с
+        // item_id, поэтому это точечный поиск по индексу. Группировка всей
+        // таблицы обошлась бы дороже самой выборки — на десятке конфигураций
+        // она замедляла запрос на порядок, что я и намерил, попробовав.
+        let mut comp_stmt = conn.prepare(
+            "SELECT ci.configuration_id, ci.item_id, i.name, ci.quantity,
+                    COALESCE((SELECT SUM(s.quantity) FROM stock s WHERE s.item_id = ci.item_id), 0),
+                    COALESCE(i.reference_price, 0)
+               FROM configuration_items ci
+               JOIN items i ON i.id = ci.item_id
+              ORDER BY i.name COLLATE NOCASE",
+        )?;
+        let mut by_configuration =
+            std::collections::HashMap::<i64, Vec<(ItemId, String, Quantity, Quantity, f64)>>::new();
+        for row in comp_stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                (
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                ),
+            ))
+        })? {
+            let (configuration_id, component) = row?;
+            by_configuration
+                .entry(configuration_id)
+                .or_default()
+                .push(component);
+        }
+        drop(comp_stmt);
+
         let mut out = Vec::new();
         for (id, name, description, result_item_id, result_name, created_at, archived_at, assembled) in
             heads
         {
-            let mut comp_stmt = conn.prepare(
-                "SELECT ci.item_id, i.name, ci.quantity,
-                        COALESCE((SELECT SUM(s.quantity) FROM stock s WHERE s.item_id = ci.item_id), 0),
-                        COALESCE(i.reference_price, 0)
-                   FROM configuration_items ci
-                   JOIN items i ON i.id = ci.item_id
-                  WHERE ci.configuration_id = ?1
-                  ORDER BY i.name COLLATE NOCASE",
-            )?;
-            let rows: Vec<(ItemId, String, Quantity, Quantity, f64)> = comp_stmt
-                .query_map(params![id], |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                    ))
-                })?
-                .collect::<rusqlite::Result<_>>()?;
+            let rows = by_configuration.remove(&id.get()).unwrap_or_default();
 
             let mut components = Vec::new();
             let mut total_value = 0.0;

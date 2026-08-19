@@ -29,6 +29,10 @@ pub struct WarehouseStatistics {
 
 #[tauri::command]
 pub fn warehouse_statistics(db: State<'_, Db>) -> DbResult<WarehouseStatistics> {
+    warehouse_statistics_on(&db)
+}
+
+pub fn warehouse_statistics_on(db: &Db) -> DbResult<WarehouseStatistics> {
     db.with(|conn| {
         // Остаток берётся из stock, а не из поля у позиции: поля больше нет.
         let row = conn.query_row(

@@ -20,7 +20,11 @@ fn миграции_создают_схему_и_ставят_версию() {
     let version: i64 = db
         .with(|conn| Ok(conn.pragma_query_value(None, "user_version", |row| row.get(0))?))
         .unwrap();
-    assert_eq!(version, 1, "версия схемы должна быть выставлена");
+    assert_eq!(
+        version,
+        crate::db::schema::MIGRATIONS.len() as i64,
+        "версия схемы должна совпадать с числом применённых миграций"
+    );
     assert_eq!(count(&db, "items"), 0, "новая база пуста");
 }
 
@@ -354,4 +358,60 @@ fn конфигурация_без_состава_не_сохраняется() 
         result.is_err(),
         "именно так в старой базе появилась конфигурация с пустым составом"
     );
+}
+
+// ---------- Порядок журнала ----------
+
+/// Журнал показывается от новых записей к старым.
+///
+/// Проверка появилась не из осторожности: я оптимизировал журнал сортировкой по
+/// номеру операции вместо времени, и на записях, перенесённых из старой базы,
+/// порядок поехал — номера там выданы заново и хронологии не следуют. Тест
+/// воспроизводит именно этот случай.
+#[test]
+fn журнал_отдаётся_от_новых_записей_к_старым() {
+    let db = db();
+    let item_id = item(&db, "Болт");
+    let place = location(&db, "Склад");
+    receive(&db, item_id, place, 10);
+
+    // Записи с временем вразнобой относительно порядка вставки — так выглядит
+    // история, перенесённая из прежней версии приложения.
+    db.transaction(|tx| {
+        for (id, at) in [(1_i64, "2024-05-01T10:00:00.000Z"), (2, "2020-01-01T00:00:00.000Z")] {
+            tx.execute(
+                "INSERT INTO operations (id, kind, performed_at) VALUES (?1, 'correction', ?2)",
+                rusqlite::params![1000 + id, at],
+            )?;
+            tx.execute(
+                "INSERT INTO operation_lines (operation_id, item_id, to_location_id, quantity)
+                 VALUES (?1, ?2, ?3, 1)",
+                rusqlite::params![1000 + id, item_id, place],
+            )?;
+        }
+        Ok(())
+    })
+    .unwrap();
+
+    let rows = crate::commands::operations::list_operations_on(&db, None, Some(500)).unwrap();
+    let times: Vec<&str> = rows.iter().map(|r| r.performed_at.as_str()).collect();
+    let mut sorted = times.clone();
+    sorted.sort_by(|a, b| b.cmp(a));
+    assert_eq!(times, sorted, "журнал должен идти от новых записей к старым");
+
+    // Строка 2020 года вставлена последней, но показаться должна в конце.
+    assert_eq!(
+        times.last(),
+        Some(&"2020-01-01T00:00:00.000Z"),
+        "самая старая запись должна оказаться внизу, а не там, где её вставили"
+    );
+}
+
+/// Время пишется в одном виде — иначе сравнение строк даёт неверный порядок.
+#[test]
+fn отметки_времени_в_одном_формате() {
+    let stamp = crate::now_iso();
+    assert_eq!(stamp.len(), 24, "ожидается YYYY-MM-DDTHH:MM:SS.sssZ: {}", stamp);
+    assert!(stamp.ends_with('Z'), "время должно заканчиваться на Z: {}", stamp);
+    assert!(!stamp.contains('+'), "смещение вместо Z ломает сравнение: {}", stamp);
 }

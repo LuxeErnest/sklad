@@ -4,7 +4,7 @@
 //! Каждая миграция выполняется в собственной транзакции. Менять уже
 //! выпущенную миграцию нельзя — только добавлять следующую.
 
-pub static MIGRATIONS: &[&str] = &[V1_INITIAL];
+pub static MIGRATIONS: &[&str] = &[V1_INITIAL, V2_NORMALIZE_TIMESTAMPS];
 
 const V1_INITIAL: &str = r#"
 -- ---------- Справочники ----------
@@ -153,4 +153,49 @@ CREATE TABLE document_items (
     item_id     INTEGER NOT NULL REFERENCES items(id)     ON DELETE CASCADE,
     PRIMARY KEY (document_id, item_id)
 );
+"#;
+
+/// Приведение отметок времени к одному виду.
+///
+/// В колонках сошлись три формата: «2026-02-05» из совсем старых записей,
+/// «2026-02-05T07:05:30.052Z» из прежней версии приложения и
+/// «2026-08-19T04:37:56.965878600+00:00» из Rust. Сравниваются они между собой
+/// неправильно, а журнал сортируется именно сравнением строк — из-за чего
+/// записи разных эпох вставали не в том порядке. Здесь всё сводится к
+/// «YYYY-MM-DDTHH:MM:SS.sssZ», который now_iso пишет и дальше.
+const V2_NORMALIZE_TIMESTAMPS: &str = r#"
+UPDATE operations SET performed_at = CASE
+    WHEN length(performed_at) = 10   THEN performed_at || 'T00:00:00.000Z'
+    WHEN performed_at LIKE '%+00:00' THEN substr(performed_at, 1, 23) || 'Z'
+    ELSE performed_at END;
+
+UPDATE items SET
+    created_at = CASE
+        WHEN length(created_at) = 10   THEN created_at || 'T00:00:00.000Z'
+        WHEN created_at LIKE '%+00:00' THEN substr(created_at, 1, 23) || 'Z'
+        ELSE created_at END,
+    updated_at = CASE
+        WHEN length(updated_at) = 10   THEN updated_at || 'T00:00:00.000Z'
+        WHEN updated_at LIKE '%+00:00' THEN substr(updated_at, 1, 23) || 'Z'
+        ELSE updated_at END;
+
+UPDATE stock SET updated_at = CASE
+    WHEN length(updated_at) = 10   THEN updated_at || 'T00:00:00.000Z'
+    WHEN updated_at LIKE '%+00:00' THEN substr(updated_at, 1, 23) || 'Z'
+    ELSE updated_at END;
+
+UPDATE configurations SET created_at = CASE
+    WHEN length(created_at) = 10   THEN created_at || 'T00:00:00.000Z'
+    WHEN created_at LIKE '%+00:00' THEN substr(created_at, 1, 23) || 'Z'
+    ELSE created_at END;
+
+UPDATE documents SET uploaded_at = CASE
+    WHEN length(uploaded_at) = 10   THEN uploaded_at || 'T00:00:00.000Z'
+    WHEN uploaded_at LIKE '%+00:00' THEN substr(uploaded_at, 1, 23) || 'Z'
+    ELSE uploaded_at END;
+
+-- Журнал показывается от новых к старым, и выборка ограничена: без этого
+-- индекса SQLite перебирает все строки журнала и строит временное дерево
+-- сортировки, чтобы отдать последние пятьсот.
+CREATE INDEX IF NOT EXISTS operations_at_id ON operations(performed_at DESC, id DESC);
 "#;
