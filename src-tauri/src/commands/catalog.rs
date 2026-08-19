@@ -247,6 +247,44 @@ pub fn save_item_on(db: &Db, input: ItemInput) -> DbResult<i64> {
     })
 }
 
+/// Привязывает штрихкод к уже заведённой позиции.
+///
+/// Отдельная команда, а не save_item: тот переписывает карточку целиком, и
+/// вызов с одним лишь штрихкодом стёр бы категорию, цену и описание.
+///
+/// Штрихкод уникален по схеме, поэтому попытка привязать чужой код вернёт
+/// внятный отказ, а не создаст вторую позицию с тем же кодом.
+#[tauri::command]
+pub fn set_item_barcode(item_id: i64, barcode: String, db: State<'_, Db>) -> DbResult<()> {
+    let trimmed = barcode.trim().to_string();
+    // Пустая строка означает отвязку: код мог быть привязан по ошибке, и без
+    // возможности снять его исправить это было бы нечем.
+    let code: Option<String> = if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    };
+    db.transaction(|tx| {
+        if let Some(ref value) = code {
+            let owner: Option<String> = tx
+                .query_row(
+                    "SELECT name FROM items WHERE barcode = ?1 AND id != ?2",
+                    params![value, item_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if let Some(name) = owner {
+                return Err(DbError(format!("Штрихкод уже привязан к «{}»", name)));
+            }
+        }
+        tx.execute(
+            "UPDATE items SET barcode = ?1, updated_at = ?2 WHERE id = ?3",
+            params![code, crate::now_iso(), item_id],
+        )?;
+        Ok(())
+    })
+}
+
 #[tauri::command]
 pub fn archive_item(item_id: i64, db: State<'_, Db>) -> DbResult<()> {
     db.with(|conn| {

@@ -8,11 +8,12 @@ import UniversalBackground from "@/components/UniversalBackground";
 import Seo from "@/components/seo/Seo";
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { upsertComponent, createCategory, setComponentTags, addComponentGroup } from "@/lib/db";
+import { upsertComponent, createCategory, setComponentTags, addComponentGroup, setComponentBarcode } from "@/lib/db";
 import { toast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/services/errorHandler";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
 import { BarcodeScanner } from "@/components/barcode/BarcodeScanner";
+import { BarcodeLinkDialog } from "@/components/barcode/BarcodeLinkDialog";
 import { useApp } from "@/contexts/AppContext";
 
 function categoryNamesWithDescendants(tree: { name: string; children: { name: string; children: unknown[] }[] }[], selectedName: string | null): string[] | null {
@@ -81,9 +82,51 @@ const Index = () => {
     });
   }, [openAddWithPrefill]);
 
+  // Незнакомый код — ещё не повод заводить новую позицию: товар может быть
+  // давно на складе, просто без штрихкода. Поэтому сначала предлагаем найти
+  // его и привязать код, и лишь потом — создать новую карточку.
+  const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
+
   const onItemNotFound = useCallback((barcode: string) => {
-    openAddWithPrefill({ barcode });
-  }, [openAddWithPrefill]);
+    setPendingBarcode(barcode);
+    setShowBarcodeScanner(false);
+  }, []);
+
+  const handleLinkBarcode = useCallback(async (item: InventoryItem) => {
+    const barcode = pendingBarcode;
+    if (!barcode) return;
+    setPendingBarcode(null);
+    try {
+      await setComponentBarcode(item.id, barcode);
+      await refreshItems();
+      toast({
+        title: "Штрихкод привязан",
+        description: `${barcode} → ${item.name}. Дальше сканирование будет вести сюда`,
+      });
+      // Сразу продолжаем тем же, чем закончилось бы обычное сканирование:
+      // человек указывает, сколько поступило и куда.
+      openAddWithPrefill({
+        existingItemId: item.id,
+        name: item.name,
+        category: item.category,
+        price: item.price ?? null,
+        description: item.description ?? null,
+        barcode,
+      });
+    } catch (error) {
+      toast({
+        title: "Не удалось привязать штрихкод",
+        description: getErrorMessage(error),
+        variant: "destructive",
+      });
+    }
+  }, [pendingBarcode, openAddWithPrefill, refreshItems]);
+
+  const handleCreateNewFromBarcode = useCallback(() => {
+    const barcode = pendingBarcode;
+    setPendingBarcode(null);
+    openAddWithPrefill({ barcode: barcode ?? undefined });
+  }, [pendingBarcode, openAddWithPrefill]);
 
   const { handleBarcodeScan } = useBarcodeScanner({
     onItemFound,
@@ -255,6 +298,15 @@ const Index = () => {
         open={showBarcodeScanner}
         onOpenChange={setShowBarcodeScanner}
         onScan={handleBarcodeScan}
+      />
+
+      <BarcodeLinkDialog
+        open={pendingBarcode !== null}
+        onOpenChange={(open) => !open && setPendingBarcode(null)}
+        barcode={pendingBarcode ?? ""}
+        items={items}
+        onLink={handleLinkBarcode}
+        onCreateNew={handleCreateNewFromBarcode}
       />
     </div>
   );

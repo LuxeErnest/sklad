@@ -272,6 +272,19 @@ export async function upsertComponent(c: {
   return id;
 }
 
+/**
+ * Привязывает штрихкод к уже заведённой позиции.
+ *
+ * Отдельная команда, а не сохранение карточки: то переписывает её целиком, и
+ * вызов с одним лишь штрихкодом стёр бы категорию, цену и описание.
+ *
+ * Пустая строка отвязывает код — на случай ошибочной привязки.
+ */
+export async function setComponentBarcode(componentId: number, barcode: string) {
+  await invoke("set_item_barcode", { itemId: componentId, barcode });
+  notify("componentsUpdated");
+}
+
 export async function archiveComponent(id: number) {
   await invoke("archive_item", { itemId: id });
   notify("componentsUpdated");
