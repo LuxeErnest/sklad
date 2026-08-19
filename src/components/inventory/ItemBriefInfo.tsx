@@ -2,54 +2,70 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Package, DollarSign, Calendar, FileText, Download, ChevronRight } from "lucide-react";
-import { getCertificatesByComponentId, readDocument } from "@/lib/db";
+import { Badge } from "@/components/ui/badge";
+import { Package, ChevronRight, ScanLine, TriangleAlert } from "lucide-react";
+import { getLastMovement } from "@/lib/db";
+import type { OperationLineView } from "@/lib/generated";
 import { InventoryItem } from "./InventoryTable";
 
-
-const getMimeFromExtension = (ext: string) => {
-  const e = (ext || '').toLowerCase();
-  if (e === 'pdf') return 'application/pdf';
-  if (e === 'jpg' || e === 'jpeg') return 'image/jpeg';
-  if (e === 'png') return 'image/png';
-  if (e === 'txt') return 'text/plain;charset=utf-8';
-  return 'application/octet-stream';
-};
-
-const truncate = (s: string, maxLen: number) => {
-  if (!s) return '';
-  return s.length <= maxLen ? s : s.slice(0, maxLen).trim() + '…';
-};
+/**
+ * Краткая справка по выбранной строке склада.
+ *
+ * Панель отвечает на один вопрос — где лежит и сколько. Цена, документы и
+ * описание переехали в полную карточку: иначе панель повторяла её и при этом
+ * не отвечала на главное. Раньше здесь показывались только сертификаты, а
+ * остатки по местам хранения — нет, хотя именно они и есть суть склада.
+ */
 
 interface ItemBriefInfoProps {
   item: InventoryItem | null;
 }
 
+const KIND_LABELS: Record<string, string> = {
+  receipt: "Поступление",
+  transfer: "Перемещение",
+  writeoff: "Списание",
+  assembly: "Сборка",
+  disassembly: "Разборка",
+  correction: "Корректировка",
+};
+
+/** Куда и откуда — в одну строку, с учётом того, что одна из сторон может отсутствовать. */
+function movementRoute(line: OperationLineView): string {
+  if (line.fromLocation && line.toLocation) return `${line.fromLocation} → ${line.toLocation}`;
+  if (line.toLocation) return `→ ${line.toLocation}`;
+  if (line.fromLocation) return `${line.fromLocation} →`;
+  return "";
+}
+
+function movementDate(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso.slice(0, 10) : d.toLocaleDateString("ru-RU");
+}
+
 export const ItemBriefInfo = ({ item }: ItemBriefInfoProps) => {
   const navigate = useNavigate();
-  const [certificates, setCertificates] = useState<Array<{ id: number; name: string; type: string; url: string }>>([]);
+  const [lastMovement, setLastMovement] = useState<OperationLineView | null>(null);
 
   useEffect(() => {
     if (!item?.id || item.itemType === "configuration") {
-      setCertificates([]);
+      setLastMovement(null);
       return;
     }
-    // Содержимое файлов больше не лежит в базе и не приходит вместе со списком:
-    // оно читается с диска отдельно и только для тех документов, что показываем.
-    getCertificatesByComponentId(item.id)
-      .then((rows) =>
-        Promise.all(
-          rows.map(async (r) => ({
-            id: r.id,
-            name: r.name,
-            type: r.type,
-            url: `data:${getMimeFromExtension(r.type)};base64,${await readDocument(r.id).catch(() => "")}`,
-          }))
-        )
-      )
-      .then(setCertificates)
-      .catch(() => setCertificates([]));
-  }, [item?.id]);
+    let отменено = false;
+    getLastMovement(item.id)
+      .then((line) => {
+        if (!отменено) setLastMovement(line);
+      })
+      .catch(() => {
+        if (!отменено) setLastMovement(null);
+      });
+    // Пока запрос идёт, показывать прошлое движение нельзя: строку уже
+    // переключили, и оно относилось бы к другому изделию.
+    return () => {
+      отменено = true;
+    };
+  }, [item?.id, item?.itemType]);
 
   if (!item) {
     return (
@@ -83,25 +99,19 @@ export const ItemBriefInfo = ({ item }: ItemBriefInfoProps) => {
             <Package className="h-5 w-5" />
             Конфигурация
           </CardTitle>
-          <CardDescription>
-            Собранная конфигурация на складе
-          </CardDescription>
+          <CardDescription>Собранная конфигурация на складе</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-3 text-sm">
             <div className="font-medium">{item.name}</div>
             <div className="flex items-center gap-2">
               <Package className="h-4 w-4 text-muted-foreground shrink-0" />
-              <span className="text-muted-foreground">Количество:</span>
+              <span className="text-muted-foreground">Собрано:</span>
               <span className="font-medium">{item.quantity} шт.</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground">Категория:</span>
               <span className="font-medium">{item.category}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">Расположение:</span>
-              <span className="font-medium">{item.location}</span>
             </div>
           </div>
           <Button onClick={handleDetails} className="w-full gap-2" size="sm">
@@ -112,7 +122,8 @@ export const ItemBriefInfo = ({ item }: ItemBriefInfoProps) => {
     );
   }
 
-  const available = item.quantity;
+  const belowMinimum = item.minStock > 0 && item.quantity <= item.minStock;
+  const places = (item.locations || []).filter((l) => l.quantity > 0);
 
   return (
     <Card className="h-fit">
@@ -121,62 +132,80 @@ export const ItemBriefInfo = ({ item }: ItemBriefInfoProps) => {
           <Package className="h-5 w-5" />
           Информация о товаре
         </CardTitle>
-        <CardDescription>
-          Краткие данные. Нажмите «Подробнее» для полной карточки
-        </CardDescription>
+        <CardDescription>Где лежит и сколько. «Подробнее» — полная карточка</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="space-y-3 text-sm">
+        <div className="flex items-start gap-3">
+          {item.imageUrl ? (
+            <img
+              src={item.imageUrl}
+              alt={item.name}
+              className="h-16 w-16 rounded border object-cover shrink-0"
+            />
+          ) : (
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded border bg-muted text-xs text-muted-foreground">
+              Нет фото
+            </div>
+          )}
+          <div className="min-w-0 space-y-1">
+            <div className="font-medium leading-tight break-words">{item.name}</div>
+            {item.barcode ? (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <ScanLine className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{item.barcode}</span>
+              </div>
+            ) : (
+              <div className="text-xs text-muted-foreground">Штрихкод не привязан</div>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-2 text-sm">
           <div className="flex items-center gap-2">
-            <Package className="h-4 w-4 text-muted-foreground shrink-0" />
-            <span className="text-muted-foreground">Количество:</span>
-            <span className="font-medium">{available} шт.</span>
+            <span className="text-muted-foreground">Всего:</span>
+            <span className="font-medium">{item.quantity} шт.</span>
+            {belowMinimum && (
+              <Badge variant="destructive" className="gap-1 text-xs">
+                <TriangleAlert className="h-3 w-3" />
+                мин. {item.minStock}
+              </Badge>
+            )}
           </div>
 
-          {item.price != null && item.price > 0 && (
-            <div className="flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-muted-foreground shrink-0" />
-              <span className="text-muted-foreground">Цена:</span>
-              <span className="font-medium">{item.price.toFixed(2)} ₽/шт.</span>
-            </div>
+          {/*
+            Разбивка по местам хранения — то, ради чего остаток и перенесён из
+            позиции в отдельную таблицу: один и тот же товар лежит на нескольких
+            складах, и «сколько всего» без «где» ничего не говорит.
+          */}
+          {places.length > 0 ? (
+            <ul className="space-y-1">
+              {places.map((place) => (
+                <li key={place.locationId} className="flex items-center justify-between gap-2">
+                  <span className="truncate text-muted-foreground">{place.location}</span>
+                  <span className="shrink-0 font-medium">{place.quantity} шт.</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-muted-foreground">Нет ни на одном складе</p>
           )}
+        </div>
 
-          {certificates.length > 0 && (
-            <div>
-              <span className="text-muted-foreground block mb-1">Сертификаты:</span>
-              <ul className="space-y-1">
-                {certificates.map((doc) => (
-                  <li key={doc.id} className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-1.5 text-sm truncate">
-                      <FileText className="h-3.5 w-3.5 shrink-0" />
-                      {doc.name}.{doc.type}
-                    </span>
-                    <a
-                      href={doc.url}
-                      download={`${doc.name}.${doc.type}`}
-                      className="shrink-0 text-primary hover:underline text-xs inline-flex items-center gap-0.5"
-                    >
-                      <Download className="h-3 w-3" /> Скачать
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {item.lastUpdated && (
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
-              <span className="text-muted-foreground">Обновлено:</span>
-              <span className="font-medium">{item.lastUpdated}</span>
-            </div>
-          )}
-
-          {item.description && (
-            <div>
-              <span className="text-muted-foreground block mb-1">Описание:</span>
-              <p className="text-sm leading-relaxed">{truncate(item.description, 120)}</p>
-            </div>
+        <div className="space-y-1 border-t pt-3 text-sm">
+          <span className="text-muted-foreground">Последнее движение:</span>
+          {lastMovement ? (
+            <p className="leading-snug">
+              <span className="font-medium">
+                {KIND_LABELS[lastMovement.kind] ?? lastMovement.kind}
+              </span>
+              {" · "}
+              {lastMovement.quantity} шт.
+              {movementRoute(lastMovement) && <> · {movementRoute(lastMovement)}</>}
+              {" · "}
+              {movementDate(lastMovement.performedAt)}
+            </p>
+          ) : (
+            <p className="text-muted-foreground">Движений не было</p>
           )}
         </div>
 

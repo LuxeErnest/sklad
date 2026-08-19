@@ -338,6 +338,18 @@ export async function getComponentPaths(componentId: number) {
   return lines.map(toLegacyPath);
 }
 
+/**
+ * Последнее, что происходило с изделием.
+ *
+ * История приходит от новых записей к старым, поэтому нужна первая строка.
+ * Null означает, что движений не было вовсе, — такое бывает у позиций,
+ * заведённых без оприходования.
+ */
+export async function getLastMovement(componentId: number): Promise<OperationLineView | null> {
+  const lines = await invoke<OperationLineView[]>("item_history", { itemId: componentId });
+  return lines[0] ?? null;
+}
+
 /** Маршрутный лист склада: всё, что приходило к нему и уходило от него. */
 export async function getLocationJournal(locationId: number, limit = 500) {
   return await invoke<OperationLineView[]>("location_journal", { locationId, limit });

@@ -1,4 +1,5 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useMemo } from "react";
+import { SearchableSelect, type SelectOption } from "@/components/common/SearchableSelect";
 import type { CategoryNode } from "@/lib/db";
 
 interface FilterBarProps {
@@ -11,11 +12,12 @@ interface FilterBarProps {
   onLocation: (v: string | null) => void;
 }
 
-function flattenCategories(nodes: CategoryNode[], prefix = ""): { value: string; label: string }[] {
-  const out: { value: string; label: string }[] = [];
+function flattenCategories(nodes: CategoryNode[], prefix = ""): SelectOption[] {
+  const out: SelectOption[] = [];
   nodes.forEach((n) => {
-    out.push({ value: n.name, label: prefix ? `${prefix} / ${n.name}` : n.name });
-    if (n.children.length) out.push(...flattenCategories(n.children, prefix ? `${prefix} / ${n.name}` : n.name));
+    const path = prefix ? `${prefix} / ${n.name}` : n.name;
+    out.push({ value: n.name, label: path });
+    if (n.children.length) out.push(...flattenCategories(n.children, path));
   });
   return out;
 }
@@ -28,42 +30,40 @@ export const FilterBar = ({
   location,
   onLocation,
 }: FilterBarProps) => {
-  const flat = flattenCategories(categoryTree);
+  // Список остаётся плоским, вложенность видна по пути через «/»: искать по
+  // такому списку можно по любой части пути, а раскрывать ветви не нужно.
+  const categoryOptions = useMemo(() => flattenCategories(categoryTree), [categoryTree]);
+  const locationOptions = useMemo<SelectOption[]>(
+    () => locations.map((l) => ({ value: l, label: l })),
+    [locations]
+  );
 
   return (
     <div className="flex flex-wrap items-center gap-3 py-3">
-      <div className="min-w-[220px]">
-        <Select value={category ?? "all"} onValueChange={(v) => onCategory(v === "all" ? null : v)}>
-          <SelectTrigger aria-label="Фильтр по категории">
-            <SelectValue placeholder="Категория" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Все категории</SelectItem>
-            {flat.map((c) => (
-              <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <SearchableSelect
+        className="min-w-[220px]"
+        options={categoryOptions}
+        value={category}
+        onChange={onCategory}
+        emptyLabel="Все категории"
+        placeholder="Поиск категории"
+        ariaLabel="Фильтр по категории"
+      />
 
       {/*
         Отбор по складу. Список берётся из того, что реально лежит на складах, а
         не из справочника мест хранения: место без единого остатка в этом отборе
         бесполезно — оно ничего не покажет.
       */}
-      <div className="min-w-[220px]">
-        <Select value={location ?? "all"} onValueChange={(v) => onLocation(v === "all" ? null : v)}>
-          <SelectTrigger aria-label="Фильтр по складу">
-            <SelectValue placeholder="Склад" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Все склады</SelectItem>
-            {locations.map((l) => (
-              <SelectItem key={l} value={l}>{l}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <SearchableSelect
+        className="min-w-[220px]"
+        options={locationOptions}
+        value={location}
+        onChange={onLocation}
+        emptyLabel="Все склады"
+        placeholder="Поиск склада"
+        ariaLabel="Фильтр по складу"
+      />
     </div>
   );
 };
