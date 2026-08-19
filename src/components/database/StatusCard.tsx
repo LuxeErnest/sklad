@@ -58,7 +58,7 @@ export const StatusCard = () => {
     }
   };
 
-  const getStatusColor = () => {
+  const getStatusColor = (): React.ComponentProps<typeof Badge>["variant"] => {
     switch (status) {
       case 'healthy':
         return 'default';
@@ -81,7 +81,7 @@ export const StatusCard = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             {getStatusIcon()}
-            <Badge variant={getStatusColor() as any}>
+            <Badge variant={getStatusColor()}>
               {getStatusText()}
             </Badge>
           </div>

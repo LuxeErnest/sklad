@@ -10,7 +10,10 @@ interface ErrorData {
   userAgent: string;
 }
 
-export const saveErrorToStorage = (error: Error | string, additionalInfo?: any) => {
+export const saveErrorToStorage = (
+  error: Error | string,
+  additionalInfo?: Record<string, unknown>
+) => {
   try {
     const errorData: ErrorData = {
       message: typeof error === 'string' ? error : error.message,

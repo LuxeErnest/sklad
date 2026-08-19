@@ -128,6 +128,23 @@ export async function getArchivedComponents() {
   return items.map(toLegacyItem);
 }
 
+/** Что можно задать при сохранении карточки изделия. */
+export interface SaveComponentInput {
+  id?: number;
+  name: string;
+  category?: string;
+  /** Место, куда приходуется количество: нужно только при изменении остатка. */
+  location?: string;
+  quantity?: number;
+  price?: number | null;
+  minStock?: number;
+  barcode?: string;
+  description?: string | null;
+  url?: string | null;
+  imageUrl?: string | null;
+  imageBase64?: string | null;
+}
+
 /**
  * Сохраняет карточку изделия.
  *
@@ -136,22 +153,18 @@ export async function getArchivedComponents() {
  * Раньше правка карточки присваивала остаток и попутно создавала запись о
  * списании, из-за чего исправление опечатки попадало в отчёт по выбытию.
  */
-export async function upsertComponent(c: {
-  id?: number; name: string; category?: string; location?: string;
-  quantity?: number; price?: number; minStock?: number; barcode?: string;
-  description?: string; url?: string; imageUrl?: string; imageBase64?: string;
-}) {
+export async function upsertComponent(c: SaveComponentInput) {
   const id = await invoke<number>("save_item", {
     input: {
       id: c.id,
       name: c.name,
       category: c.category,
-      price: c.price,
+      price: c.price ?? undefined,
       minStock: c.minStock,
       barcode: c.barcode,
       description: c.description,
       url: c.url,
-      imagePath: c.imageUrl,
+      imagePath: c.imageUrl ?? undefined,
     },
   });
 
@@ -164,7 +177,7 @@ export async function upsertComponent(c: {
         kind: "receipt",
         performedBy: "Пользователь",
         note: "Первичное оприходование",
-        lines: [{ itemId: id, toLocationId: locationId, quantity: c.quantity, unitPrice: c.price }],
+        lines: [{ itemId: id, toLocationId: locationId, quantity: c.quantity, unitPrice: c.price ?? undefined }],
       },
     });
   }
@@ -874,6 +887,18 @@ export async function updateDocumentLinks(documentId: number, componentIds: numb
 /** Содержимое документа в base64 — запрашивается только когда оно нужно. */
 export async function readDocument(documentId: number): Promise<string> {
   return await invoke("read_document", { documentId });
+}
+
+/** Документы, привязанные к изделию. Содержимое читается отдельно. */
+export async function getDocumentsByComponentId(componentId: number) {
+  const docs = await invoke<DocumentView[]>("item_documents", { itemId: componentId });
+  return docs.map((d) => ({
+    id: d.id,
+    name: d.name,
+    type: d.mime ?? "",
+    category: d.category ?? "",
+    sizeBytes: d.sizeBytes,
+  }));
 }
 
 export async function getCertificatesByComponentId(componentId: number) {

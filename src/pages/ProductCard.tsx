@@ -5,6 +5,7 @@ import UniversalBackground from "@/components/UniversalBackground";
 import Seo from "@/components/seo/Seo";
 import { useApp } from "@/contexts/AppContext";
 import { ProductCardFull } from "@/components/inventory/ProductCardFull";
+import type { InventoryItem } from "@/components/inventory/InventoryTable";
 import { useEffect, useState } from "react";
 
 const ProductCardPage = () => {
@@ -20,9 +21,20 @@ const ProductCardPage = () => {
     refreshItems();
   }, [refreshItems, id]);
 
-  const handleUpdateItem = async (itemId: number, updates: Record<string, unknown>) => {
+  const handleUpdateItem = async (itemId: number, updates: Partial<InventoryItem>) => {
     const { upsertComponent } = await import("@/lib/db");
-    await upsertComponent({ ...updates, id: itemId } as any);
+    await upsertComponent({
+      id: itemId,
+      name: updates.name ?? "",
+      category: updates.category,
+      location: updates.location,
+      quantity: updates.quantity,
+      price: updates.price,
+      minStock: updates.minStock,
+      barcode: updates.barcode ?? undefined,
+      description: updates.description,
+      url: updates.url,
+    });
     await refreshItems();
   };
 

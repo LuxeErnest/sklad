@@ -82,7 +82,9 @@ const Edit = () => {
   const [scrapQuantity, setScrapQuantity] = useState("");
   const [scrapLocation, setScrapLocation] = useState("");
   const [scrapReason, setScrapReason] = useState("");
-  const [availableGroups, setAvailableGroups] = useState<any[]>([]);
+  const [availableGroups, setAvailableGroups] = useState<
+    Awaited<ReturnType<typeof getComponentGroups>>
+  >([]);
   const [categoriesModalOpen, setCategoriesModalOpen] = useState(false);
   const [tagsModalOpen, setTagsModalOpen] = useState(false);
   const [tagsManagerModalOpen, setTagsManagerModalOpen] = useState(false);
@@ -98,7 +100,7 @@ const Edit = () => {
       const itemId = parseInt(itemIdParam);
       const item = getItemById(itemId);
       if (item) {
-        handleEdit(item as any);
+        handleEdit(item);
       }
     }
   }, [searchParams, getItemById]);

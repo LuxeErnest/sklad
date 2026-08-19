@@ -6,6 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import GlassmorphismWrapper from "@/components/theme/GlassmorphismWrapper";
 import SimpleCalculator from "@/components/calculator/SimpleCalculator";
 import { Plus, Pencil, Calculator, Settings, FileText, Wrench, Home, Hash, ScrollText } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useApp } from "@/contexts/AppContext";
 
 export const Sidebar = () => {
@@ -40,7 +41,7 @@ export const Sidebar = () => {
     onClick, 
     isActive = false 
   }: { 
-    icon: any; 
+    icon: LucideIcon;
     label: string; 
     onClick?: () => void;
     isActive?: boolean;

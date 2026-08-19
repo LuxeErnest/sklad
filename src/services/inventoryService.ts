@@ -62,11 +62,20 @@ export async function updateItem(
   }
 
   try {
+    // Поля перечисляются явно: карточка склада несёт и то, что к сохранению
+    // отношения не имеет — остатки по местам, теги, признак конфигурации.
     await upsertComponent({
       id: itemId,
-      ...updates,
+      name: updates.name ?? "",
+      category: updates.category,
+      location: updates.location,
       quantity: newQuantity,
-    } as any);
+      price: updates.price,
+      minStock: updates.minStock,
+      barcode: updates.barcode,
+      description: updates.description,
+      url: updates.url,
+    });
 
     return {
       success: true,

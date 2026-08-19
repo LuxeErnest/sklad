@@ -26,9 +26,17 @@ export function ProductHistoryModals({
   onScrapClose,
   onMovementsClose,
 }: ProductHistoryModalsProps) {
-  const [supplies, setSupplies] = useState<any[]>([]);
-  const [scrapItems, setScrapItems] = useState<any[]>([]);
-  const [movements, setMovements] = useState<any[]>([]);
+  // Формы строк берутся из самих функций слоя данных: описывать их здесь
+  // заново значило бы завести вторую версию того же описания.
+  const [supplies, setSupplies] = useState<
+    Awaited<ReturnType<typeof getSupplyRecordsByComponentId>>
+  >([]);
+  const [scrapItems, setScrapItems] = useState<
+    Awaited<ReturnType<typeof getScrappedItemsByComponentId>>
+  >([]);
+  const [movements, setMovements] = useState<
+    Awaited<ReturnType<typeof getComponentPaths>>
+  >([]);
   const [loading, setLoading] = useState<string | null>(null);
 
   useEffect(() => {
@@ -54,7 +62,7 @@ export function ProductHistoryModals({
       setLoading("movements");
       getComponentPaths(componentId)
         .then((paths) => {
-          setMovements((paths || []).filter((p: any) => p.stepType === "transfer"));
+          setMovements((paths || []).filter((p) => p.stepType === "transfer"));
         })
         .finally(() => setLoading(null));
     }

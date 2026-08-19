@@ -19,19 +19,22 @@ import type {
   WarehouseAnalytics,
 } from "@/lib/calculator";
 
+/** Конфигурация в объёме, который нужен аналитике. */
+export interface AnalyticsConfiguration {
+  id: number;
+  name: string;
+  components: RecipeComponent[];
+  totalValue?: number;
+  priority?: string;
+}
+
 interface AnalyticsTabProps {
   warehouseAnalytics: WarehouseAnalytics;
   components: (StockItem & { lastUpdated?: string })[];
   categories: string[];
-  configurations: {
-    id: number;
-    name: string;
-    components: RecipeComponent[];
-    totalValue?: number;
-    priority?: string;
-  }[];
+  configurations: AnalyticsConfiguration[];
   warehouseStats: Record<string, number | undefined>;
-  calculateConfigurationAvailability: (config: any) => ConfigurationAvailability;
+  calculateConfigurationAvailability: (config: AnalyticsConfiguration) => ConfigurationAvailability;
   showDetailedAnalytics: boolean;
   setShowDetailedAnalytics: Dispatch<SetStateAction<boolean>>;
   showPlanningStats: boolean;
@@ -138,7 +141,7 @@ export const AnalyticsTab = ({
                   className="transition-all duration-200 hover:scale-105"
                   onClick={() => {
                     // Export to Excel
-                    const excelData = warehouseAnalytics.outOfStockItems.map((item: any) => ({
+                    const excelData = warehouseAnalytics.outOfStockItems.map((item) => ({
                       'Компонент': item.name,
                       'Категория': item.category,
                       'Расположение': item.location,
@@ -174,7 +177,7 @@ export const AnalyticsTab = ({
             </div>
             {showDetailedAnalytics && (
               <div className="space-y-2 max-h-64 overflow-y-auto">
-                {warehouseAnalytics.outOfStockItems.map((item: any) => (
+                {warehouseAnalytics.outOfStockItems.map((item) => (
                   <div
                     key={item.id}
                     className="flex items-center justify-between p-3 border rounded-lg bg-red-50 border-red-200 text-red-900"

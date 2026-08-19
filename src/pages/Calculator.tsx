@@ -30,7 +30,7 @@ import {
 } from "@/lib/calculator";
 import { useApp } from "@/contexts/AppContext";
 import { toast } from "@/hooks/use-toast";
-import { AnalyticsTab } from "@/components/calculator/AnalyticsTab";
+import { AnalyticsTab, type AnalyticsConfiguration } from "@/components/calculator/AnalyticsTab";
 import { ScrapTab } from "@/components/calculator/ScrapTab";
 import { ManualCalcTab } from "@/components/calculator/ManualCalcTab";
 
@@ -136,7 +136,9 @@ const Calculator = () => {
   }, [search, selectedCategory, components]);
 
   // Расчёты живут в lib/calculator.ts — это чистые функции без React.
-  const calculateConfigurationAvailability = (config: ConfigurationRow) =>
+  // Расчёту нужен только состав, поэтому аргумент описан по минимуму: так
+  // функция подходит и странице, и вкладке аналитики.
+  const calculateConfigurationAvailability = (config: AnalyticsConfiguration) =>
     calcAvailability(config, components);
 
   const manualCalculations = useMemo(

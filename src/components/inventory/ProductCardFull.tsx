@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ExternalLink, Calendar, MapPin, Package, DollarSign, FileText, Download, Truck, Trash2, ArrowLeft, Tag } from "lucide-react";
-import { getDocuments, getConfigurationsByComponentId, getTags, getComponentTagIds, setComponentTags } from "@/lib/db";
+import { getDocumentsByComponentId, getConfigurationsByComponentId, getTags, getComponentTagIds, setComponentTags, readDocument } from "@/lib/db";
 import { InventoryItem } from "./InventoryTable";
 import { LocationDistribution } from "./LocationDistribution";
 import { ProductHistoryModals } from "./ProductHistoryModals";
@@ -18,7 +18,9 @@ interface ProductCardFullProps {
 }
 
 export const ProductCardFull = ({ item, onBack, onRefresh }: ProductCardFullProps) => {
-  const [linkedDocuments, setLinkedDocuments] = useState<Array<{ id: number; name: string; type: string; url: string }>>([]);
+  const [linkedDocuments, setLinkedDocuments] = useState<
+    Awaited<ReturnType<typeof getDocumentsByComponentId>>
+  >([]);
   const [configurations, setConfigurations] = useState<Array<{ id: number; name: string; quantity: number }>>([]);
   const [allTags, setAllTags] = useState<{ id: number; name: string }[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
@@ -26,29 +28,29 @@ export const ProductCardFull = ({ item, onBack, onRefresh }: ProductCardFullProp
   const [historyScrapOpen, setHistoryScrapOpen] = useState(false);
   const [historyMovementsOpen, setHistoryMovementsOpen] = useState(false);
 
+  /** Содержимое файла лежит на диске и читается только при скачивании. */
+  const downloadDocument = async (doc: { id: number; name: string; type: string }) => {
+    try {
+      const base64 = await readDocument(doc.id);
+      const link = document.createElement("a");
+      link.href = `data:application/octet-stream;base64,${base64}`;
+      link.download = doc.type ? `${doc.name}.${doc.type}` : doc.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("Не удалось скачать документ:", error);
+    }
+  };
+
   useEffect(() => {
     (async () => {
       try {
-        const rows: any[] = await getDocuments();
-        const docs = rows
-          .filter((r: any) => {
-            if (typeof r.componentIds === "string" && r.componentIds) {
-              return r.componentIds
-                .split(",")
-                .map((id: string) => Number(id))
-                .includes(item.id);
-            }
-            if (r.legacyComponentId) return Number(r.legacyComponentId) === item.id;
-            if (typeof r.componentId !== "undefined") return Number(r.componentId) === item.id;
-            return false;
-          })
-          .map((r: any) => ({
-            id: r.id,
-            name: r.name,
-            type: r.type,
-            url: `data:${(r.type || "").toString()};base64,${r.dataBase64}`,
-          }));
-        setLinkedDocuments(docs);
+        // Документы запрашиваются по изделию, а не отбираются из общего списка.
+        // Прежний отбор разбирал componentIds как строку с запятыми — после
+        // переработки схемы это массив, и условие перестало срабатывать
+        // вообще: документы на карточке не показывались.
+        setLinkedDocuments(await getDocumentsByComponentId(item.id));
       } catch (_) {
         setLinkedDocuments([]);
       }
@@ -186,11 +188,11 @@ export const ProductCardFull = ({ item, onBack, onRefresh }: ProductCardFullProp
           </>
         )}
 
-        {(item.url || (item as any).website) && (
+        {item.url && (
           <div className="flex items-center gap-2">
             <ExternalLink className="h-4 w-4 text-muted-foreground shrink-0" />
             <a
-              href={(item.url || (item as any).website) as string}
+              href={item.url}
               target="_blank"
               rel="noopener noreferrer"
               className="text-primary hover:underline text-sm"
@@ -215,13 +217,13 @@ export const ProductCardFull = ({ item, onBack, onRefresh }: ProductCardFullProp
                       <FileText className="h-4 w-4" />
                       {doc.name}.{doc.type}
                     </span>
-                    <a
-                      href={doc.url}
-                      download={doc.name}
+                    <button
+                      type="button"
+                      onClick={() => downloadDocument(doc)}
                       className="inline-flex items-center gap-1 text-primary hover:underline"
                     >
                       <Download className="h-3 w-3" /> Скачать
-                    </a>
+                    </button>
                   </li>
                 ))}
               </ul>

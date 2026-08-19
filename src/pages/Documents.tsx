@@ -186,10 +186,10 @@ const Documents = () => {
       }
     };
     
-    window.addEventListener('documentsUpdated', onDocsUpdated as any);
+    window.addEventListener("documentsUpdated", onDocsUpdated);
     return () => {
       isMounted = false;
-      window.removeEventListener('documentsUpdated', onDocsUpdated as any);
+      window.removeEventListener("documentsUpdated", onDocsUpdated);
     };
   }, [items]);
 
@@ -256,37 +256,10 @@ const Documents = () => {
         dataBase64: base64,
       });
       
-      // Reload list
-      const rows: any[] = await getDocuments();
-      if (Array.isArray(rows)) {
-        const mapped = rows.map((r: any) => {
-          const componentIds: number[] = typeof r.componentIds === 'string' && r.componentIds 
-            ? r.componentIds.split(',').map((id: string) => Number(id)).filter(Boolean) 
-            : [];
-          const compNames = componentIds
-            .map((id) => {
-              const comp = Array.isArray(items) ? items.find(c => c.id === Number(id)) : null;
-              return comp?.name;
-            })
-            .filter(Boolean)
-            .join(', ');
-          return {
-            id: r.id,
-            name: r.name || 'Без названия',
-            type: r.type,
-            size: `${(Number(r.sizeBytes || 0) / (1024 * 1024)).toFixed(1)} MB`,
-            componentIds,
-            componentNames: compNames,
-            category: r.category || 'Без категории',
-            uploadedBy: r.uploadedBy || 'Пользователь',
-            uploadedAt: (r.uploadedAt || '').toString().split('T')[0],
-            description: r.description || '',
-            tags: typeof r.tags === 'string' ? r.tags.split(',').filter(Boolean) : (r.tags || []),
-            url: `data:${getMimeFromExtension(r.type)};base64,${r.dataBase64 || ''}`,
-          };
-        });
-        setDocuments(mapped);
-      }
+      // Список перечитывается тем же преобразованием, что и при первой
+      // загрузке: раньше здесь лежала его третья копия, и все три успели
+      // разойтись между собой.
+      setDocuments((await getDocuments()).map(toDocumentRow));
       
       // Dispatch event to notify other components
       window.dispatchEvent(new CustomEvent('documentsUpdated'));
@@ -870,25 +843,7 @@ const Documents = () => {
             <Button onClick={async ()=>{
               if (!editLinksDoc) return;
               await updateDocumentLinks(editLinksDoc.id, editSelectedComponentIds);
-              const rows: any[] = await getDocuments();
-              const mapped = rows.map((r: any) => ({
-                id: r.id,
-                name: r.name,
-                type: r.type,
-                size: `${(Number(r.sizeBytes) / (1024 * 1024)).toFixed(1)} MB`,
-                componentIds: typeof r.componentIds === 'string' && r.componentIds ? r.componentIds.split(',').map((id: string)=>Number(id)) : [],
-                componentNames: (typeof r.componentIds === 'string' ? r.componentIds.split(',').map((id: string)=>{
-                  const comp = items.find(c=>c.id===Number(id));
-                  return comp?.name;
-                }).filter(Boolean).join(', ') : ''),
-                category: r.category,
-                uploadedBy: r.uploadedBy || 'Пользователь',
-                uploadedAt: (r.uploadedAt || '').toString().split('T')[0],
-                description: r.description || '',
-                tags: typeof r.tags === 'string' ? r.tags.split(',').filter(Boolean) : (r.tags || []),
-                url: `data:${(r.type || '').toString()};base64,${r.dataBase64}`,
-              }));
-              setDocuments(mapped);
+              setDocuments((await getDocuments()).map(toDocumentRow));
               setEditLinksDoc(null);
             }}>Сохранить</Button>
           </div>

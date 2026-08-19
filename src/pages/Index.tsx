@@ -207,7 +207,18 @@ const Index = () => {
             quantity: newItem.quantity,
             price: newItem.price ?? undefined,
           }).then(() => addPrefill.existingItemId!)
-        : await upsertComponent(newItem as any);
+        : await upsertComponent({
+            name: newItem.name,
+            category: newItem.category,
+            location: newItem.location,
+            quantity: newItem.quantity,
+            price: newItem.price,
+            minStock: newItem.minStock,
+            barcode: newItem.barcode ?? undefined,
+            description: newItem.description,
+            url: newItem.url,
+            imageUrl: newItem.imageUrl,
+          });
       step = "назначение тегов";
       if (id && tagIds?.length) {
         await setComponentTags(id, tagIds);
