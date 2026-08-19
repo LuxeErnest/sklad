@@ -29,29 +29,46 @@ export interface InventoryItem
 const PAGE_SIZE_OPTIONS = [10, 30, 50];
 const DEFAULT_PAGE_SIZE = 50;
 
-/** Parses search: text (name/description/barcode) + #tag1 #tag2 (AND) and " или " for OR */
-function matchSearchQuery(query: string, item: InventoryItem): boolean {
+/**
+ * Разобранный поисковый запрос: текст плюс группы тегов (#тег), объединённые
+ * через « или ». Внутри группы теги складываются по «и».
+ *
+ * Разбор вынесен из проверки строки намеренно. Раньше запрос разбирался заново
+ * для каждой позиции — на двадцати тысячах строк это двадцать тысяч разбиений
+ * регулярными выражениями на каждое нажатие клавиши. Теперь разбор один, а на
+ * позицию остаётся только сравнение.
+ */
+interface ParsedQuery {
+  text: string;
+  tagGroups: string[][];
+}
+
+function parseSearchQuery(query: string): ParsedQuery | null {
   const q = (query || "").trim();
-  if (!q) return true;
+  if (!q) return null;
   const orParts = q.split(/\s+или\s+/i).map((s) => s.trim()).filter(Boolean);
   const textParts: string[] = [];
-  const tagAndGroups: string[][] = [];
+  const tagGroups: string[][] = [];
   orParts.forEach((part) => {
     const tokens = part.split(/\s+/).filter(Boolean);
     const tags: string[] = [];
     tokens.forEach((t) => {
-      if (t.startsWith("#")) tags.push(t.slice(1).trim());
+      if (t.startsWith("#")) tags.push(t.slice(1).trim().toLowerCase());
       else textParts.push(t);
     });
-    if (tags.length) tagAndGroups.push(tags);
+    if (tags.length) tagGroups.push(tags);
   });
-  const textQuery = [...new Set(textParts)].join(" ").toLowerCase();
+  return { text: [...new Set(textParts)].join(" ").toLowerCase(), tagGroups };
+}
+
+function matchParsedQuery(parsed: ParsedQuery | null, item: InventoryItem): boolean {
+  if (!parsed) return true;
   const itemTags = (item.tags || []).map((x) => x.toLowerCase());
   const itemText = [item.name, item.description || "", item.barcode || "", (item.tags || []).join(" ")].join(" ").toLowerCase();
-  const matchText = !textQuery || itemText.includes(textQuery);
-  if (tagAndGroups.length === 0) return matchText;
-  const matchOr = tagAndGroups.some((andTags) =>
-    andTags.every((tag) => itemTags.some((t) => t.includes(tag.toLowerCase()) || tag.toLowerCase().includes(t)))
+  const matchText = !parsed.text || itemText.includes(parsed.text);
+  if (parsed.tagGroups.length === 0) return matchText;
+  const matchOr = parsed.tagGroups.some((andTags) =>
+    andTags.every((tag) => itemTags.some((t) => t.includes(tag) || tag.includes(t)))
   );
   return matchText && matchOr;
 }
@@ -95,13 +112,24 @@ export const InventoryTable = ({
     return defaultPageSize;
   });
 
+  const parsedSearch = useMemo(() => parseSearchQuery(search), [search]);
+
+  // Разрешённые категории кладутся в множество: includes по массиву — линейный
+  // поиск, и на дереве категорий он выполнялся для каждой строки склада.
+  const allowedCategories = useMemo(
+    () =>
+      categoryFilterNames && categoryFilterNames.length > 0
+        ? new Set(categoryFilterNames)
+        : null,
+    [categoryFilterNames]
+  );
+
   const filtered = useMemo(() => {
     return items.filter((i) => {
-      const matchCategory = !categoryFilterNames || categoryFilterNames.length === 0 || categoryFilterNames.includes(i.category);
-      const matchSearch = matchSearchQuery(search, i);
-      return matchSearch && matchCategory;
+      const matchCategory = !allowedCategories || allowedCategories.has(i.category);
+      return matchCategory && matchParsedQuery(parsedSearch, i);
     });
-  }, [items, search, categoryFilterNames]);
+  }, [items, parsedSearch, allowedCategories]);
 
 
   const sorted = useMemo(() => {

@@ -138,9 +138,21 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     return [...new Set([...fromTree, ...fromItems, ...fromConfigs])];
   }, [categoryTree, items, assembledConfigurations]);
 
-  /** Принудительное обновление — для мест, где обновление запрашивают явно. */
+  /**
+   * Принудительное обновление — для мест, где обновление запрашивают явно.
+   *
+   * Сбрасываются только те запросы, которые держит этот контекст. Раньше здесь
+   * стоял invalidateQueries без ключа, то есть «перечитать вообще всё»: после
+   * каждой записи список склада уезжал по IPC второй раз, хотя notify в слое
+   * данных уже сбросил ровно то, что изменилось. На двадцати тысячах позиций
+   * один такой лишний проход — это восемь мегабайт JSON.
+   */
   const refreshItems = useCallback(async () => {
-    await queryClient.invalidateQueries();
+    await Promise.all(
+      [queryKeys.items, queryKeys.categories, queryKeys.tags, queryKeys.configurations].map(
+        (queryKey) => queryClient.invalidateQueries({ queryKey })
+      )
+    );
   }, [queryClient]);
 
   const getItemById = useCallback(

@@ -2,7 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { TabsContent } from "@/components/ui/tabs";
 import { FileText, Trash2, XCircle } from "lucide-react";
-import * as XLSX from "xlsx";
+import { exportRowsToXlsx, datedFileName } from "@/lib/exportXlsx";
 
 interface ScrapRecord {
   id: number;
@@ -77,29 +77,21 @@ export const ScrapTab = ({ scrappedItems }: ScrapTabProps) => (
             <div className="flex gap-2">
               <Button
                 className="flex-1 transition-all duration-200 hover:scale-105"
-                onClick={() => {
-                  // Download Excel report
-                  const excelData = scrappedItems.map(item => ({
-                    'Товар': item.componentName,
-                    'Когда списано': new Date(item.scrappedAt).toLocaleString('ru-RU'),
-                    'Откуда': item.location,
-                    'Количество (шт.)': item.quantity
-                  }));
-                  
-                  const wb = XLSX.utils.book_new();
-                  const ws = XLSX.utils.json_to_sheet(excelData);
-                  
-                  ws['!cols'] = [
-                    { wch: 30 },
-                    { wch: 20 },
-                    { wch: 20 },
-                    { wch: 15 }
-                  ];
-                  
-                  XLSX.utils.book_append_sheet(wb, ws, 'Списания');
-                  const fileName = `scrapped_items_${new Date().toISOString().split('T')[0]}.xlsx`;
-                  XLSX.writeFile(wb, fileName);
-                }}
+                onClick={() =>
+                  exportRowsToXlsx(
+                    scrappedItems.map((item) => ({
+                      'Товар': item.componentName,
+                      'Когда списано': new Date(item.scrappedAt).toLocaleString('ru-RU'),
+                      'Откуда': item.location,
+                      'Количество (шт.)': item.quantity,
+                    })),
+                    {
+                      fileName: datedFileName('scrapped_items'),
+                      sheetName: 'Списания',
+                      widths: [30, 20, 20, 15],
+                    }
+                  )
+                }
               >
                 <FileText className="h-4 w-4 mr-2" />
                 Скачать отчет Excel

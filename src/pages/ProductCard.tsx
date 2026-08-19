@@ -6,7 +6,7 @@ import Seo from "@/components/seo/Seo";
 import { useApp } from "@/contexts/AppContext";
 import { ProductCardFull } from "@/components/inventory/ProductCardFull";
 import type { InventoryItem } from "@/components/inventory/InventoryTable";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 const ProductCardPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -16,10 +16,6 @@ const ProductCardPage = () => {
 
   const itemId = id ? parseInt(id, 10) : NaN;
   const item = Number.isFinite(itemId) ? getItemById(itemId) : undefined;
-
-  useEffect(() => {
-    refreshItems();
-  }, [refreshItems, id]);
 
   const handleUpdateItem = async (itemId: number, updates: Partial<InventoryItem>) => {
     const { upsertComponent } = await import("@/lib/db");

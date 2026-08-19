@@ -9,7 +9,7 @@ import {
   AlertTriangle, Banknote, BarChart3, CheckCircle, FileText, Package,
   Target, TrendingDown, TrendingUp, XCircle,
 } from "lucide-react";
-import * as XLSX from "xlsx";
+import { exportRowsToXlsx, datedFileName } from "@/lib/exportXlsx";
 import { ItemLink } from "@/components/common/ItemLink";
 import { formatCurrency } from "@/lib/utils";
 import type {
@@ -59,40 +59,23 @@ export const AnalyticsTab = ({
   showPlanningStats,
   getPriorityBadge,
 }: AnalyticsTabProps) => {
-  const downloadWarehouseReport = () => {
-    // Prepare data for Excel
-    const excelData = components.map(item => ({
-      'Наименование': item.name,
-      'Категория': item.category,
-      'Количество (шт.)': item.quantity,
-      'Расположение': item.location,
-      'Цена (₽)': item.price || 0,
-      'Общая стоимость (₽)': (item.price || 0) * item.quantity,
-      'Последнее обновление': item.lastUpdated || 'Не указано'
-    }));
-    
-    // Create workbook and worksheet
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(excelData);
-    
-    // Set column widths
-    ws['!cols'] = [
-      { wch: 30 }, // Наименование
-      { wch: 20 }, // Категория
-      { wch: 15 }, // Количество
-      { wch: 20 }, // Расположение
-      { wch: 15 }, // Цена
-      { wch: 20 }, // Общая стоимость
-      { wch: 20 }  // Последнее обновление
-    ];
-    
-    // Add worksheet to workbook
-    XLSX.utils.book_append_sheet(wb, ws, 'Отчет по складу');
-    
-    // Generate and download file
-    const fileName = `warehouse_report_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(wb, fileName);
-  };
+  const downloadWarehouseReport = () =>
+    exportRowsToXlsx(
+      components.map((item) => ({
+        'Наименование': item.name,
+        'Категория': item.category,
+        'Количество (шт.)': item.quantity,
+        'Расположение': item.location,
+        'Цена (₽)': item.price || 0,
+        'Общая стоимость (₽)': (item.price || 0) * item.quantity,
+        'Последнее обновление': item.lastUpdated || 'Не указано',
+      })),
+      {
+        fileName: datedFileName('warehouse_report'),
+        sheetName: 'Отчет по складу',
+        widths: [30, 20, 15, 20, 15, 20, 20],
+      }
+    );
 
   return (
   <TabsContent value="analytics" className="space-y-6">
@@ -139,28 +122,22 @@ export const AnalyticsTab = ({
                   size="sm"
                   variant="outline"
                   className="transition-all duration-200 hover:scale-105"
-                  onClick={() => {
-                    // Export to Excel
-                    const excelData = warehouseAnalytics.outOfStockItems.map((item) => ({
-                      'Компонент': item.name,
-                      'Категория': item.category,
-                      'Расположение': item.location,
-                      'Мин. запас': item.minStock ?? 0,
-                      'Текущее кол-во (шт.)': item.quantity
-                    }));
-                    const wb = XLSX.utils.book_new();
-                    const ws = XLSX.utils.json_to_sheet(excelData);
-                    ws['!cols'] = [
-                      { wch: 30 },
-                      { wch: 20 },
-                      { wch: 20 },
-                      { wch: 12 },
-                      { wch: 18 }
-                    ];
-                    XLSX.utils.book_append_sheet(wb, ws, 'Отсутствующие');
-                    const fileName = `out_of_stock_${new Date().toISOString().split('T')[0]}.xlsx`;
-                    XLSX.writeFile(wb, fileName);
-                  }}
+                  onClick={() =>
+                    exportRowsToXlsx(
+                      warehouseAnalytics.outOfStockItems.map((item) => ({
+                        'Компонент': item.name,
+                        'Категория': item.category,
+                        'Расположение': item.location,
+                        'Мин. запас': item.minStock ?? 0,
+                        'Текущее кол-во (шт.)': item.quantity,
+                      })),
+                      {
+                        fileName: datedFileName('out_of_stock'),
+                        sheetName: 'Отсутствующие',
+                        widths: [30, 20, 20, 12, 18],
+                      }
+                    )
+                  }
                 >
                   <FileText className="h-4 w-4 mr-2" />
                   Экспорт Excel

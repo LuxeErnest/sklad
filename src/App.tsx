@@ -8,17 +8,24 @@ import { ThemeProvider } from "next-themes";
 import { AppProvider } from "@/contexts/AppContext";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { setupGlobalErrorHandlers } from "@/utils/globalErrorHandlers";
-import { useEffect } from "react";
+import { useEffect, lazy, Suspense } from "react";
 // import { useGlassmorphism } from "@/hooks/useGlassmorphism";
 import Index from "./pages/Index";
-import Calculator from "./pages/Calculator";
-import Edit from "./pages/Edit";
-import Configurations from "./pages/Configurations";
-import Documents from "./pages/Documents";
-import Journal from "./pages/Journal";
-import SettingsPage from "./pages/Settings";
-import ProductCardPage from "./pages/ProductCard";
-import NotFound from "./pages/NotFound";
+
+/*
+  Список склада — то, что открывается первым, поэтому он подключён напрямую.
+  Остальные экраны подгружаются при первом переходе на них: иначе всё
+  приложение собиралось в один файл на полмегабайта, который разбирался
+  целиком до появления первого кадра, хотя при запуске нужен один экран.
+*/
+const Calculator = lazy(() => import("./pages/Calculator"));
+const Edit = lazy(() => import("./pages/Edit"));
+const Configurations = lazy(() => import("./pages/Configurations"));
+const Documents = lazy(() => import("./pages/Documents"));
+const Journal = lazy(() => import("./pages/Journal"));
+const SettingsPage = lazy(() => import("./pages/Settings"));
+const ProductCardPage = lazy(() => import("./pages/ProductCard"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 
 
 const App = () => {
@@ -48,7 +55,8 @@ const App = () => {
               <AppProvider>
                 <Toaster />
                 <Sonner />
-                <Routes>
+                <Suspense fallback={<div className="min-h-screen" />}>
+                  <Routes>
                   <Route path="/" element={<Index />} />
                   <Route path="/calculator" element={<Calculator />} />
                   <Route path="/edit" element={<Edit />} />
@@ -59,7 +67,8 @@ const App = () => {
                   <Route path="/item/:id" element={<ProductCardPage />} />
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
-                </Routes>
+                  </Routes>
+                </Suspense>
               </AppProvider>
             </HashRouter>
           </TooltipProvider>
