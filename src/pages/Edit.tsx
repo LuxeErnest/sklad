@@ -65,9 +65,9 @@ type EditableItem = {
   category: string;
   location: string;
   lastUpdated?: string;
-  description?: string;
+  description?: string | null;
   website?: string;
-  price?: number;
+  price?: number | null;
 };
 
 const Edit = () => {

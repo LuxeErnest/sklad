@@ -1,3 +1,4 @@
+import type { ItemView } from "@/lib/generated";
 import { useMemo, useState, useEffect } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -5,20 +6,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ChevronLeft, ChevronRight, Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
-export interface InventoryItem {
-  id: number;
-  name: string;
-  quantity: number;
+/**
+ * Строка склада в интерфейсе.
+ *
+ * Основа берётся из типа, сгенерированного по структуре Rust, — так поля не
+ * расходятся с тем, что реально приходит. Раньше этот интерфейс описывался
+ * вручную и был уже действительности: в нём, например, не было minStock,
+ * из-за чего страницы читали его через any.
+ */
+export interface InventoryItem
+  extends Omit<ItemView, "category" | "location" | "imagePath"> {
   category: string;
   location: string;
-  price?: number;
-  url?: string;
-  description?: string;
   lastUpdated?: string;
   imageUrl?: string;
   imageBase64?: string;
-  barcode?: string;
-  tags?: string[];
   /** Элемент — конфигурация (id на складе отрицательный: -configurationId) */
   itemType?: "component" | "configuration";
   configurationId?: number;

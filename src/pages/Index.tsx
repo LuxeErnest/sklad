@@ -46,11 +46,25 @@ const Index = () => {
   const warehouseItems = useMemo((): InventoryItem[] => {
     const components: InventoryItem[] = (items || []).map((i) => ({ ...i, itemType: "component" as const }));
     const configRows: InventoryItem[] = (assembledConfigurations || []).map((c) => ({
+      // Отрицательный идентификатор отличает собранную конфигурацию от позиции
+      // номенклатуры: в списке склада они лежат вперемешку.
       id: -c.configurationId,
       name: c.name,
       quantity: c.quantity,
       category: c.category,
       location: c.location,
+      // Остальные поля строки склада к конфигурации неприменимы.
+      categoryId: null,
+      unit: "шт",
+      price: null,
+      minStock: 0,
+      barcode: null,
+      description: null,
+      url: null,
+      archivedAt: null,
+      updatedAt: "",
+      locations: [],
+      tags: [],
       itemType: "configuration" as const,
       configurationId: c.configurationId,
     }));
@@ -191,7 +205,7 @@ const Index = () => {
             name: "Поступление по штрихкоду",
             location: newItem.location,
             quantity: newItem.quantity,
-            price: newItem.price,
+            price: newItem.price ?? undefined,
           }).then(() => addPrefill.existingItemId!)
         : await upsertComponent(newItem as any);
       step = "назначение тегов";

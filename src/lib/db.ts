@@ -501,6 +501,9 @@ export async function addScrappedItem(payload: {
   return id;
 }
 
+/** Строка списания в том виде, в каком её показывают отчёты. */
+export type ScrappedRow = Awaited<ReturnType<typeof getScrappedItems>>[number];
+
 export async function getScrappedItems() {
   const lines = await invoke<OperationLineView[]>("list_operations", { kind: "writeoff", limit: 500 });
   return lines.map((l) => ({

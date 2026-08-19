@@ -18,8 +18,11 @@ import {
   assembleConfiguration
 } from "@/lib/db";
 import { formatCurrency } from "@/lib/utils";
+import type { WarehouseStatistics } from "@/lib/generated";
+import type { ScrappedRow } from "@/lib/db";
 import {
   type AvailabilityStatus,
+  type RecipeComponent,
   calculateConfigurationAvailability as calcAvailability,
   calculateManualTotals as calcManualTotals,
   calculateWarehouseAnalytics as calcWarehouseAnalytics,
@@ -31,9 +34,19 @@ import { AnalyticsTab } from "@/components/calculator/AnalyticsTab";
 import { ScrapTab } from "@/components/calculator/ScrapTab";
 import { ManualCalcTab } from "@/components/calculator/ManualCalcTab";
 
-// Empty arrays for clean start
-const mockComponents: any[] = [];
-const mockConfigurations: any[] = [];
+/** Конфигурация в том виде, в каком её показывает страница статистики. */
+interface ConfigurationRow {
+  id: number;
+  name: string;
+  description: string | null;
+  components: RecipeComponent[];
+  totalItems: number;
+  totalValue: number;
+  priority: string;
+}
+
+/** Пустой список — исходное состояние до загрузки. */
+const NO_CONFIGURATIONS: ConfigurationRow[] = [];
 
 const Calculator = () => {
   const navigate = useNavigate();
@@ -43,15 +56,15 @@ const Calculator = () => {
   const [activeTab, setActiveTab] = useState("analytics");
   const { items, categories, refreshItems } = useApp();
   const [isLoading, setIsLoading] = useState(false);
-  const [configurations, setConfigurations] = useState<any[]>(mockConfigurations);
-  const [warehouseStats, setWarehouseStats] = useState<any>({});
+  const [configurations, setConfigurations] = useState<ConfigurationRow[]>(NO_CONFIGURATIONS);
+  const [warehouseStats, setWarehouseStats] = useState<Partial<WarehouseStatistics>>({});
   const [showPlanningStats, setShowPlanningStats] = useState(false);
   const [showDetailedAnalytics, setShowDetailedAnalytics] = useState(true);
-  const [scrappedItems, setScrappedItems] = useState<any[]>([]);
+  const [scrappedItems, setScrappedItems] = useState<ScrappedRow[]>([]);
 
   // Use items from context with minStock
-  const components = useMemo(() => 
-    items.map((r: any) => ({ ...r, minStock: r.minStock ?? 0 })),
+  const components = useMemo<StockItem[]>(
+    () => items.map((r) => ({ ...r, minStock: r.minStock ?? 0 })),
     [items]
   );
 
@@ -61,24 +74,24 @@ const Calculator = () => {
       // Load configurations if any exist in DB
       const cfgs = await getConfigurations();
       if (Array.isArray(cfgs) && cfgs.length > 0) {
-        const full = [] as any[];
+        const full: ConfigurationRow[] = [];
         for (const c of cfgs) {
           const comps = await getConfigurationComponents(c.id);
-          const componentsList = comps.map((cc: any) => ({ 
-            componentId: cc.componentId, 
-            quantity: cc.quantity, 
-            name: items.find((r: any) => r.id === cc.componentId)?.name || "" 
+          const componentsList: RecipeComponent[] = comps.map((cc) => ({
+            componentId: cc.componentId,
+            quantity: cc.quantity,
+            name: items.find((r) => r.id === cc.componentId)?.name ?? "",
           }));
-          const totalItems = componentsList.reduce((s: number, it: any) => s + it.quantity, 0);
-          const totalValue = componentsList.reduce((s: number, it: any) => {
-            const comp = items.find((r: any) => r.id === it.componentId);
-            return s + (comp?.price || 0) * it.quantity;
+          const totalItems = componentsList.reduce((sum, it) => sum + it.quantity, 0);
+          const totalValue = componentsList.reduce((sum, it) => {
+            const comp = items.find((r) => r.id === it.componentId);
+            return sum + (comp?.price ?? 0) * it.quantity;
           }, 0);
           full.push({ ...c, components: componentsList, totalItems, totalValue, priority: "medium" });
         }
         setConfigurations(full);
       } else {
-        setConfigurations(mockConfigurations);
+        setConfigurations(NO_CONFIGURATIONS);
       }
 
       // Load additional data
@@ -91,7 +104,7 @@ const Calculator = () => {
       setScrappedItems(scrapped);
     } catch (error) {
       console.error('Error loading calculator data:', error);
-      setConfigurations(mockConfigurations);
+      setConfigurations(NO_CONFIGURATIONS);
       setWarehouseStats({});
       setScrappedItems([]);
     }
@@ -123,16 +136,16 @@ const Calculator = () => {
   }, [search, selectedCategory, components]);
 
   // Расчёты живут в lib/calculator.ts — это чистые функции без React.
-  const calculateConfigurationAvailability = (config: any) =>
-    calcAvailability(config, components as StockItem[]);
+  const calculateConfigurationAvailability = (config: ConfigurationRow) =>
+    calcAvailability(config, components);
 
   const manualCalculations = useMemo(
-    () => calcManualTotals(selectedItems, components as StockItem[]),
+    () => calcManualTotals(selectedItems, components),
     [selectedItems, components]
   );
 
   const warehouseAnalytics = useMemo(
-    () => calcWarehouseAnalytics(components as StockItem[], configurations),
+    () => calcWarehouseAnalytics(components, configurations),
     [components, configurations]
   );
 
@@ -183,7 +196,7 @@ const Calculator = () => {
   };
 
   // Function to build configuration: резервирует компоненты (сборка без списания со склада)
-  const buildConfiguration = async (config: typeof mockConfigurations[0]) => {
+  const buildConfiguration = async (config: ConfigurationRow) => {
     const availability = calculateConfigurationAvailability(config);
     if (availability.maxPossibleBuilds === 0) {
       toast({ title: "Недостаточно компонентов", description: "Для сборки этой конфигурации не хватает остатков", variant: "destructive" });
@@ -312,7 +325,7 @@ const Calculator = () => {
 
 
               <ManualCalcTab
-                components={components as StockItem[]}
+                components={components}
                 filteredComponents={filteredComponents as StockItem[]}
                 categories={categories}
                 selectedItems={selectedItems}
@@ -331,7 +344,7 @@ const Calculator = () => {
 
               <AnalyticsTab
                 warehouseAnalytics={warehouseAnalytics}
-                components={components as StockItem[]}
+                components={components}
                 categories={categories}
                 configurations={configurations}
                 warehouseStats={warehouseStats}
