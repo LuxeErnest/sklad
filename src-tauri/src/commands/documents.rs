@@ -13,21 +13,26 @@ use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, Runtime, State};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentView {
+    #[ts(type = "number")]
     pub id: i64,
     pub name: String,
     pub mime: Option<String>,
+    #[ts(type = "number")]
     pub size_bytes: i64,
     pub category: Option<String>,
     pub description: Option<String>,
     pub uploaded_by: Option<String>,
     pub uploaded_at: String,
+    #[ts(type = "number[]")]
     pub item_ids: Vec<i64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentInput {
     pub name: String,
@@ -42,6 +47,7 @@ pub struct DocumentInput {
     #[serde(default)]
     pub uploaded_by: Option<String>,
     #[serde(default)]
+    #[ts(type = "number[]")]
     pub item_ids: Vec<i64>,
 }
 

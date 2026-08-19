@@ -11,7 +11,8 @@ use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct OperationLineInput {
     pub item_id: ItemId,
@@ -24,7 +25,8 @@ pub struct OperationLineInput {
     pub unit_price: Option<f64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct OperationInput {
     pub kind: String,
@@ -37,9 +39,11 @@ pub struct OperationInput {
     pub lines: Vec<OperationLineInput>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct OperationLineView {
+    #[ts(type = "number")]
     pub id: i64,
     pub operation_id: OperationId,
     pub kind: String,

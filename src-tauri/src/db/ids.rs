@@ -17,8 +17,13 @@ use serde::{Deserialize, Serialize};
 macro_rules! id_type {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+        #[derive(
+            Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, ts_rs::TS,
+        )]
         #[serde(transparent)]
+        // Во фронтенд уходит обычное число: обёртка нужна компилятору Rust,
+        // а не интерфейсу.
+        #[ts(export, export_to = "../../src/lib/generated/", type = "number")]
         pub struct $name(pub i64);
 
         impl $name {
@@ -79,8 +84,9 @@ id_type!(
 ///
 /// Отдельный тип нужен не меньше, чем идентификаторы: именно количество чаще
 /// всего стояло рядом с ними в подписи и могло с ними перепутаться.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, ts_rs::TS)]
 #[serde(transparent)]
+#[ts(export, export_to = "../../src/lib/generated/", type = "number")]
 pub struct Quantity(pub i64);
 
 impl Quantity {

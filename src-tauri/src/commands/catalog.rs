@@ -8,23 +8,30 @@ use tauri::State;
 
 // ---------- Номенклатура ----------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct StockAtLocation {
+    #[ts(type = "number")]
     pub location_id: i64,
     pub location: String,
+    #[ts(type = "number")]
     pub quantity: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct ItemView {
+    #[ts(type = "number")]
     pub id: i64,
     pub name: String,
     pub category: Option<String>,
+    #[ts(type = "number | null")]
     pub category_id: Option<i64>,
     pub unit: String,
     pub price: Option<f64>,
+    #[ts(type = "number")]
     pub min_stock: i64,
     pub barcode: Option<String>,
     pub description: Option<String>,
@@ -33,6 +40,7 @@ pub struct ItemView {
     pub archived_at: Option<String>,
     pub updated_at: String,
     /// Суммарный остаток по всем местам хранения. Поля в базе нет — это сумма.
+    #[ts(type = "number")]
     pub quantity: i64,
     /// Место с наибольшим остатком: интерфейс местами показывает одно.
     pub location: Option<String>,
@@ -40,10 +48,12 @@ pub struct ItemView {
     pub tags: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct ItemInput {
     #[serde(default)]
+    #[ts(type = "number | null")]
     pub id: Option<i64>,
     pub name: String,
     #[serde(default)]
@@ -53,6 +63,7 @@ pub struct ItemInput {
     #[serde(default)]
     pub price: Option<f64>,
     #[serde(default)]
+    #[ts(type = "number | null")]
     pub min_stock: Option<i64>,
     #[serde(default)]
     pub barcode: Option<String>,
@@ -381,14 +392,18 @@ pub fn delete_item(item_id: i64, db: State<'_, Db>) -> DbResult<()> {
 
 // ---------- Места хранения ----------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct LocationView {
+    #[ts(type = "number")]
     pub id: i64,
     pub name: String,
     pub description: Option<String>,
     pub archived_at: Option<String>,
+    #[ts(type = "number")]
     pub item_count: i64,
+    #[ts(type = "number")]
     pub total_quantity: i64,
 }
 
@@ -512,11 +527,14 @@ pub fn merge_locations_on(db: &Db, source_id: LocationId, target_id: LocationId)
 
 // ---------- Категории ----------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct CategoryView {
+    #[ts(type = "number")]
     pub id: i64,
     pub name: String,
+    #[ts(type = "number | null")]
     pub parent_id: Option<i64>,
 }
 
@@ -585,9 +603,11 @@ pub fn delete_category(category_id: i64, db: State<'_, Db>) -> DbResult<()> {
 
 // ---------- Теги ----------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct TagView {
+    #[ts(type = "number")]
     pub id: i64,
     pub name: String,
 }

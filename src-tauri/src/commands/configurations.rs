@@ -26,17 +26,21 @@ type ConfigurationRow = (
     Quantity,
 );
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigurationComponent {
     pub item_id: ItemId,
     pub name: String,
+    #[ts(type = "number")]
     pub quantity: i64,
     /// Сколько такого компонента сейчас на складах.
+    #[ts(type = "number")]
     pub available: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigurationView {
     pub id: ConfigurationId,
@@ -47,21 +51,26 @@ pub struct ConfigurationView {
     pub created_at: String,
     pub archived_at: Option<String>,
     /// Остаток результирующей позиции — он же количество собранных единиц.
+    #[ts(type = "number")]
     pub assembled: i64,
     /// Сколько ещё можно собрать из того, что есть на складах.
+    #[ts(type = "number")]
     pub can_assemble: i64,
     pub components: Vec<ConfigurationComponent>,
     pub total_value: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigurationComponentInput {
     pub item_id: ItemId,
+    #[ts(type = "number")]
     pub quantity: i64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigurationInput {
     #[serde(default)]

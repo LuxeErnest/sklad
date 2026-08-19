@@ -12,6 +12,27 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import type {
+  ConfigurationView,
+  DocumentView,
+  IntegrityReport,
+  ItemView,
+  LocationView,
+  OperationLineView,
+} from "@/lib/generated";
+
+// Типы приходят из Rust: описание данных существует в одном месте, и
+// расхождение между слоем данных и интерфейсом становится ошибкой сборки,
+// а не тихой неожиданностью во время работы.
+export type {
+  ConfigurationView,
+  DocumentView,
+  IntegrityReport,
+  ItemView,
+  LocationView,
+  OperationLineView,
+  StockAtLocation,
+} from "@/lib/generated";
 import { queryClient, queryKeys } from "@/lib/queryClient";
 
 // ---------- Типы, которые ждёт интерфейс ----------
@@ -23,98 +44,6 @@ export interface CategoryNode {
   children: CategoryNode[];
 }
 
-export interface StockAtLocation {
-  locationId: number;
-  location: string;
-  quantity: number;
-}
-
-interface ItemView {
-  id: number;
-  name: string;
-  category: string | null;
-  categoryId: number | null;
-  unit: string;
-  price: number | null;
-  minStock: number;
-  barcode: string | null;
-  description: string | null;
-  url: string | null;
-  imagePath: string | null;
-  archivedAt: string | null;
-  updatedAt: string;
-  quantity: number;
-  location: string | null;
-  locations: StockAtLocation[];
-  tags: string[];
-}
-
-interface OperationLineView {
-  id: number;
-  operationId: number;
-  kind: string;
-  performedAt: string;
-  performedBy: string | null;
-  note: string | null;
-  itemId: number;
-  itemName: string;
-  fromLocationId: number | null;
-  fromLocation: string | null;
-  toLocationId: number | null;
-  toLocation: string | null;
-  quantity: number;
-  unitPrice: number | null;
-}
-
-interface LocationView {
-  id: number;
-  name: string;
-  description: string | null;
-  archivedAt: string | null;
-  itemCount: number;
-  totalQuantity: number;
-}
-
-interface ConfigurationView {
-  id: number;
-  name: string;
-  description: string | null;
-  resultItemId: number;
-  resultItemName: string;
-  createdAt: string;
-  archivedAt: string | null;
-  assembled: number;
-  canAssemble: number;
-  components: { itemId: number; name: string; quantity: number; available: number }[];
-  totalValue: number;
-}
-
-interface DocumentView {
-  id: number;
-  name: string;
-  mime: string | null;
-  sizeBytes: number;
-  category: string | null;
-  description: string | null;
-  uploadedBy: string | null;
-  uploadedAt: string;
-  itemIds: number[];
-}
-
-export interface IntegrityReport {
-  stockDrift: {
-    itemId: number;
-    itemName: string;
-    locationId: number;
-    location: string;
-    stockQuantity: number;
-    journalQuantity: number;
-  }[];
-  negativeStock: number;
-  foreignKeyViolations: number;
-  orphanOperations: number;
-  checkedAt: string;
-}
 
 // ---------- Служебное ----------
 

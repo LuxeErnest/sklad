@@ -4,17 +4,26 @@ use crate::db::{Db, DbResult};
 use serde::Serialize;
 use tauri::State;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct WarehouseStatistics {
+    #[ts(type = "number")]
     pub total_items: i64,
+    #[ts(type = "number")]
     pub total_units: i64,
     pub total_value: f64,
+    #[ts(type = "number")]
     pub low_stock_items: i64,
+    #[ts(type = "number")]
     pub out_of_stock_items: i64,
+    #[ts(type = "number")]
     pub total_locations: i64,
+    #[ts(type = "number")]
     pub total_configurations: i64,
+    #[ts(type = "number")]
     pub assembled_units: i64,
+    #[ts(type = "number")]
     pub operations_total: i64,
 }
 
@@ -63,24 +72,33 @@ pub fn warehouse_statistics(db: State<'_, Db>) -> DbResult<WarehouseStatistics> 
     })
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct StockDrift {
+    #[ts(type = "number")]
     pub item_id: i64,
     pub item_name: String,
+    #[ts(type = "number")]
     pub location_id: i64,
     pub location: String,
+    #[ts(type = "number")]
     pub stock_quantity: i64,
+    #[ts(type = "number")]
     pub journal_quantity: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
 #[serde(rename_all = "camelCase")]
 pub struct IntegrityReport {
     /// Расхождения между таблицей остатков и суммой по журналу.
     pub stock_drift: Vec<StockDrift>,
+    #[ts(type = "number")]
     pub negative_stock: i64,
+    #[ts(type = "number")]
     pub foreign_key_violations: i64,
+    #[ts(type = "number")]
     pub orphan_operations: i64,
     pub checked_at: String,
 }
