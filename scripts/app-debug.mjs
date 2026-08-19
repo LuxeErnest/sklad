@@ -16,7 +16,11 @@
  *   route <путь>             перейти на экран, например: route /journal
  *   eval "<js>"              выполнить выражение (await поддерживается)
  *                            выражение должно быть в ОДНУ строку: перенос
- *                            теряется при передаче аргумента через npm
+ *                            теряется при передаче аргумента через npm.
+ *                            Несколько инструкций — тогда нужен явный return.
+ *                            Аргументы, начинающиеся со слеша, Git Bash
+ *                            превращает в пути: такие вызовы делать из
+ *                            PowerShell или через node напрямую.
  *   shot [файл]              снимок экрана в PNG
  *   errors [секунды]         следить за ошибками консоли
  *   tabs                     список вкладок и переключение по индексу
@@ -126,8 +130,22 @@ switch (command) {
   }
 
   case "eval": {
-    const expression = args.join(" ");
-    const value = await app.evaluate(`(async () => { ${expression} })()`);
+    // Выражение оборачивается в асинхронную функцию, а значит без return оно
+    // ничего не отдаёт. Раньше это молча приводило к «undefined», и было не
+    // отличить «выражение вернуло undefined» от «я забыл return». Поэтому
+    // сначала пробуем как выражение, и только если оно не разобралось —
+    // как набор инструкций.
+    const source = args.join(" ");
+    const looksLikeStatements = /return|;/.test(source);
+    let value;
+    if (!looksLikeStatements) {
+      value = await app.evaluate(`(async () => (${source}))()`);
+    } else {
+      value = await app.evaluate(`(async () => { ${source} })()`);
+      if (value === undefined && !/return/.test(source)) {
+        console.error("подсказка: в выражении нет return, поэтому вернулось undefined");
+      }
+    }
     console.log(typeof value === "object" ? JSON.stringify(value, null, 2) : value);
     break;
   }
