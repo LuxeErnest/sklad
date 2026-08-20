@@ -227,8 +227,8 @@ const Calculator = () => {
                   <div className="flex items-center gap-2">
                     <Package className="h-5 w-5 text-primary" />
                     <div>
-                      <div className="text-2xl font-bold">{warehouseAnalytics.canBuildHighPriority}</div>
-                      <div className="text-sm text-muted-foreground">Доступно высокоприоритетных</div>
+                      <div className="text-2xl font-bold">{warehouseAnalytics.canBuildCount}</div>
+                      <div className="text-sm text-muted-foreground">Конфигураций собирается</div>
                     </div>
                   </div>
                 </CardContent>

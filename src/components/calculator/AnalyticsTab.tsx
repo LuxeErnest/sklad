@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { exportRowsToXlsx, datedFileName } from "@/lib/exportXlsx";
 import { ItemLink } from "@/components/common/ItemLink";
+import { WarehouseReports } from "./WarehouseReports";
 import { formatCurrency } from "@/lib/utils";
 import type {
   ConfigurationAvailability,
@@ -183,45 +184,52 @@ export const AnalyticsTab = ({
         </CardContent>
       </Card>
 
+      {/*
+        Раньше здесь был раздел «Приоритетные конфигурации». Приоритета нет в
+        модели данных вообще: страница присваивала каждой сборке «medium», а
+        отбор искал «high» — счётчики стояли на нуле, а «Детализация» была
+        пуста всегда. Показываем то, что действительно посчитано: сколько
+        сборок собирается из наличного запаса.
+      */}
       <Card>
         <CardHeader>
-          <CardTitle>Приоритетные конфигурации</CardTitle>
-          <CardDescription>Статус высокоприоритетных сборок</CardDescription>
+          <CardTitle>Что можно собрать</CardTitle>
+          <CardDescription>Из того, что есть на складах прямо сейчас</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="text-center p-4 bg-primary/5 rounded-lg">
               <Target className="h-8 w-8 text-primary mx-auto mb-2" />
-              <div className="text-2xl font-bold">{warehouseAnalytics.highPriorityConfigs.length}</div>
-              <div className="text-sm text-muted-foreground">Всего высокоприоритетных</div>
+              <div className="text-2xl font-bold">{warehouseAnalytics.totalConfigurations}</div>
+              <div className="text-sm text-muted-foreground">Всего конфигураций</div>
             </div>
             <div className="text-center p-4 bg-green-50 rounded-lg">
               <CheckCircle className="h-8 w-8 text-green-600 mx-auto mb-2" />
-              <div className="text-2xl font-bold text-green-600">{warehouseAnalytics.canBuildHighPriority}</div>
-              <div className="text-sm text-muted-foreground">Можно собрать</div>
+              <div className="text-2xl font-bold text-green-600">{warehouseAnalytics.canBuildCount}</div>
+              <div className="text-sm text-muted-foreground">Собирается хотя бы одна</div>
             </div>
           </div>
 
           <Separator />
 
-          <div>
-            <h4 className="font-medium mb-3">Детализация</h4>
-            <div className="space-y-2">
-              {warehouseAnalytics.highPriorityConfigs.map(({ config, availability }) => (
-                <div key={config.id} className="flex items-center justify-between p-2 border rounded">
-                  <div>
-                    <div className="font-medium">{config.name}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {availability.availableCount}/{availability.totalCount} компонентов
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-medium">{availability.maxPossibleBuilds}</div>
-                    <div className="text-sm text-muted-foreground">можно собрать</div>
+          <div className="space-y-2">
+            {warehouseAnalytics.configurationAnalytics.map(({ config, availability }) => (
+              <div key={config.id} className="flex items-center justify-between gap-2 p-2 border rounded">
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{config.name}</div>
+                  <div className="text-sm text-muted-foreground">
+                    {availability.availableCount} из {availability.totalCount} компонентов в наличии
                   </div>
                 </div>
-              ))}
-            </div>
+                <div className="text-right shrink-0">
+                  <div className="font-medium">{availability.maxPossibleBuilds}</div>
+                  <div className="text-sm text-muted-foreground">можно собрать</div>
+                </div>
+              </div>
+            ))}
+            {warehouseAnalytics.configurationAnalytics.length === 0 && (
+              <p className="text-sm text-muted-foreground">Конфигураций пока нет</p>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -278,6 +286,7 @@ export const AnalyticsTab = ({
          </CardContent>
        </Card>
 
+    <WarehouseReports />
   </TabsContent>
   );
 };

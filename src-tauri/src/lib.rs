@@ -86,6 +86,9 @@ pub fn run() {
             // Сводка и целостность
             stats::warehouse_statistics,
             stats::check_integrity,
+            stats::movement_summary,
+            stats::value_by_location,
+            stats::dead_stock,
             stats::repair_integrity
         ])
         .setup(|app| {

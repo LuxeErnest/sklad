@@ -229,3 +229,160 @@ pub fn repair_integrity(db: State<'_, Db>) -> DbResult<usize> {
         Ok(changed)
     })
 }
+
+// ---------- Отчёты для экрана статистики ----------
+
+/// Движение за период, сгруппированное по виду операции.
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct MovementByKind {
+    pub kind: String,
+    /// Сколько операций такого вида.
+    #[ts(type = "number")]
+    pub operations: i64,
+    /// Сколько единиц прошло через них.
+    #[ts(type = "number")]
+    pub units: i64,
+}
+
+/// Сколько поступило, списано и перемещено начиная с указанного момента.
+///
+/// Считается по журналу, а не по остаткам: остаток отвечает на «сколько есть
+/// сейчас», а этот отчёт — на «что происходило», и второе из первого не
+/// выводится. Экран статистики раньше не показывал этого вовсе.
+#[tauri::command]
+pub fn movement_summary(since: String, db: State<'_, Db>) -> DbResult<Vec<MovementByKind>> {
+    movement_summary_on(&db, &since)
+}
+
+pub fn movement_summary_on(db: &Db, since: &str) -> DbResult<Vec<MovementByKind>> {
+    db.with(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT o.kind, COUNT(DISTINCT o.id), COALESCE(SUM(ol.quantity), 0)
+               FROM operations o
+               JOIN operation_lines ol ON ol.operation_id = o.id
+              WHERE o.performed_at >= ?1
+              GROUP BY o.kind
+              ORDER BY 3 DESC",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![since], |row| {
+            Ok(MovementByKind {
+                kind: row.get(0)?,
+                operations: row.get(1)?,
+                units: row.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    })
+}
+
+/// Сколько единиц и на какую сумму лежит на каждом складе.
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct LocationValue {
+    #[ts(type = "number")]
+    pub location_id: i64,
+    pub location: String,
+    #[ts(type = "number")]
+    pub items: i64,
+    #[ts(type = "number")]
+    pub units: i64,
+    pub value: f64,
+}
+
+/// Где лежат деньги.
+///
+/// Общая стоимость склада одним числом скрывает главное: она может почти целиком
+/// приходиться на одну позицию на одном складе, и по экрану этого было не видно.
+#[tauri::command]
+pub fn value_by_location(db: State<'_, Db>) -> DbResult<Vec<LocationValue>> {
+    value_by_location_on(&db)
+}
+
+pub fn value_by_location_on(db: &Db) -> DbResult<Vec<LocationValue>> {
+    db.with(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT l.id, l.name, COUNT(*), COALESCE(SUM(s.quantity), 0),
+                    COALESCE(SUM(s.quantity * COALESCE(i.reference_price, 0)), 0)
+               FROM stock s
+               JOIN locations l ON l.id = s.location_id
+               JOIN items i     ON i.id = s.item_id
+              WHERE i.archived_at IS NULL AND s.quantity > 0
+              GROUP BY l.id, l.name
+              ORDER BY 5 DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(LocationValue {
+                location_id: row.get(0)?,
+                location: row.get(1)?,
+                items: row.get(2)?,
+                units: row.get(3)?,
+                value: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    })
+}
+
+/// Позиция, по которой давно не было движений.
+#[derive(Debug, Serialize, ts_rs::TS)]
+#[ts(export, export_to = "../../src/lib/generated/")]
+#[serde(rename_all = "camelCase")]
+pub struct DeadStockItem {
+    #[ts(type = "number")]
+    pub item_id: i64,
+    pub name: String,
+    #[ts(type = "number")]
+    pub quantity: i64,
+    pub value: f64,
+    /// Когда последний раз двигалось. Пусто — не двигалось ни разу.
+    pub last_movement_at: Option<String>,
+}
+
+/// Что лежит без движения с указанного момента.
+///
+/// Берутся только позиции с непустым остатком: пустая ничего не занимает и
+/// мёртвым запасом не является. Позиции без единой записи в журнале попадают
+/// сюда тоже — они лежат неизвестно с каких пор.
+#[tauri::command]
+pub fn dead_stock(before: String, db: State<'_, Db>) -> DbResult<Vec<DeadStockItem>> {
+    dead_stock_on(&db, &before)
+}
+
+pub fn dead_stock_on(db: &Db, before: &str) -> DbResult<Vec<DeadStockItem>> {
+    db.with(|conn| {
+        let mut stmt = conn.prepare(
+            "WITH totals AS (
+                 SELECT item_id, SUM(quantity) AS quantity
+                   FROM stock GROUP BY item_id
+             ),
+             last_move AS (
+                 SELECT ol.item_id, MAX(o.performed_at) AS at
+                   FROM operation_lines ol
+                   JOIN operations o ON o.id = ol.operation_id
+                  GROUP BY ol.item_id
+             )
+             SELECT i.id, i.name, t.quantity,
+                    t.quantity * COALESCE(i.reference_price, 0), m.at
+               FROM items i
+               JOIN totals t    ON t.item_id = i.id
+               LEFT JOIN last_move m ON m.item_id = i.id
+              WHERE i.archived_at IS NULL
+                AND t.quantity > 0
+                AND (m.at IS NULL OR m.at < ?1)
+              ORDER BY 4 DESC, i.name COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![before], |row| {
+            Ok(DeadStockItem {
+                item_id: row.get(0)?,
+                name: row.get(1)?,
+                quantity: row.get(2)?,
+                value: row.get(3)?,
+                last_movement_at: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    })
+}

@@ -20,6 +20,9 @@ import type {
   LocationView,
   OperationLineView,
   WarehouseStatistics,
+  MovementByKind,
+  LocationValue,
+  DeadStockItem,
 } from "@/lib/generated";
 
 // Типы приходят из Rust: описание данных существует в одном месте, и
@@ -870,6 +873,28 @@ export async function getWarehouseStatistics() {
     totalLocations: s.totalLocations,
     operationsTotal: s.operationsTotal,
   };
+}
+
+/** Начало периода в том же виде, в каком время лежит в базе. */
+function sinceDaysAgo(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString();
+}
+
+/** Сколько поступило, списано и перемещено за последние N дней. */
+export async function getMovementSummary(days: number): Promise<MovementByKind[]> {
+  return await invoke("movement_summary", { since: sinceDaysAgo(days) });
+}
+
+/** Сколько единиц и на какую сумму лежит на каждом складе. */
+export async function getValueByLocation(): Promise<LocationValue[]> {
+  return await invoke("value_by_location");
+}
+
+/** Что лежит без движения дольше N дней. */
+export async function getDeadStock(days: number): Promise<DeadStockItem[]> {
+  return await invoke("dead_stock", { before: sinceDaysAgo(days) });
 }
 
 export async function checkIntegrity(): Promise<IntegrityReport> {

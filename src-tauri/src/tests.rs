@@ -512,3 +512,96 @@ fn категория_удаляется_когда_её_покинула_пос
         .unwrap();
     assert_eq!(имена, vec!["Крепёж".to_string()], "опустевшая категория должна исчезнуть");
 }
+
+// ---------- Отчёты экрана статистики ----------
+
+#[test]
+fn движение_за_период_считается_по_журналу() {
+    let db = db();
+    let болт = item(&db, "Болт");
+    let склад_а = location(&db, "Склад А");
+    let склад_б = location(&db, "Склад Б");
+
+    receive(&db, болт, склад_а, 100);
+    register_on(
+        &db,
+        &operation("transfer", vec![line(болт, Some(склад_а), Some(склад_б), 30)]),
+    )
+    .unwrap();
+    register_on(
+        &db,
+        &operation("writeoff", vec![line(болт, Some(склад_а), None, 5)]),
+    )
+    .unwrap();
+
+    let отчёт =
+        crate::commands::stats::movement_summary_on(&db, "2000-01-01T00:00:00.000Z").unwrap();
+    let найти = |вид: &str| отчёт.iter().find(|r| r.kind == вид);
+
+    assert_eq!(найти("receipt").map(|r| r.units), Some(100));
+    assert_eq!(найти("transfer").map(|r| r.units), Some(30));
+    assert_eq!(найти("writeoff").map(|r| r.units), Some(5));
+    assert_eq!(найти("receipt").map(|r| r.operations), Some(1));
+
+    // Срез по времени: за период после всех операций не должно быть ничего.
+    let пусто = crate::commands::stats::movement_summary_on(&db, "2999-01-01T00:00:00.000Z").unwrap();
+    assert!(пусто.is_empty(), "за будущий период движений быть не может");
+}
+
+#[test]
+fn стоимость_раскладывается_по_складам() {
+    let db = db();
+    let болт = item(&db, "Болт"); // цена 100 задана в test_support
+    let гайка = item(&db, "Гайка");
+    let склад_а = location(&db, "Склад А");
+    let склад_б = location(&db, "Склад Б");
+
+    receive(&db, болт, склад_а, 3); // 300
+    receive(&db, гайка, склад_а, 2); // 200
+    receive(&db, болт, склад_б, 1); // 100
+
+    let по_складам = crate::commands::stats::value_by_location_on(&db).unwrap();
+    let найти = |имя: &str| по_складам.iter().find(|r| r.location == имя).unwrap();
+
+    assert_eq!(найти("Склад А").value, 500.0);
+    assert_eq!(найти("Склад А").units, 5);
+    assert_eq!(найти("Склад А").items, 2, "на складе А две разные позиции");
+    assert_eq!(найти("Склад Б").value, 100.0);
+
+    // Сумма по складам обязана совпадать с общей стоимостью склада.
+    let всего: f64 = по_складам.iter().map(|r| r.value).sum();
+    let сводка = crate::commands::stats::warehouse_statistics_on(&db).unwrap();
+    assert_eq!(всего, сводка.total_value);
+}
+
+#[test]
+fn мёртвый_запас_это_остаток_без_движения() {
+    let db = db();
+    let лежит = item(&db, "Лежит давно");
+    let двигался = item(&db, "Двигался");
+    let пустой = item(&db, "Пустой");
+    let склад = location(&db, "Склад");
+
+    // Обе позиции приходуются сейчас, поэтому по свежей границе мёртвых нет.
+    receive(&db, лежит, склад, 10);
+    receive(&db, двигался, склад, 10);
+    let _ = пустой;
+
+    let свежий = crate::commands::stats::dead_stock_on(&db, "2000-01-01T00:00:00.000Z").unwrap();
+    assert!(свежий.is_empty(), "только что поступившее мёртвым не считается");
+
+    // По границе в будущем без движения оказывается всё, у чего есть остаток.
+    let всё = crate::commands::stats::dead_stock_on(&db, "2999-01-01T00:00:00.000Z").unwrap();
+    let имена: Vec<&str> = всё.iter().map(|r| r.name.as_str()).collect();
+    assert!(имена.contains(&"Лежит давно"));
+    assert!(имена.contains(&"Двигался"));
+    assert!(
+        !имена.contains(&"Пустой"),
+        "позиция без остатка места не занимает и мёртвым запасом не является"
+    );
+
+    let запись = всё.iter().find(|r| r.name == "Лежит давно").unwrap();
+    assert_eq!(запись.quantity, 10);
+    assert_eq!(запись.value, 1000.0, "10 штук по 100");
+    assert!(запись.last_movement_at.is_some(), "поступление — это движение");
+}

@@ -174,16 +174,22 @@ export function calculateManualTotals(
 
 export interface WarehouseAnalytics {
   totalStockValue: number;
+  /**
+   * Остаток опустился до минимума или ниже.
+   *
+   * Минимум должен быть задан: при нуле условие «остаток ≤ минимума» означало
+   * бы «остаток ≤ 0», то есть повторяло бы список отсутствующих. Именно так и
+   * было — обе карточки показывали одно и то же число.
+   */
   lowStockItems: StockItem[];
   outOfStockItems: StockItem[];
   configurationAnalytics: {
-    config: { id: number; name: string; priority?: string; components: RecipeComponent[] };
+    config: { id: number; name: string; components: RecipeComponent[] };
     availability: ConfigurationAvailability;
     canBuild: boolean;
-    priority?: string;
   }[];
-  highPriorityConfigs: WarehouseAnalytics["configurationAnalytics"];
-  canBuildHighPriority: number;
+  /** Сколько конфигураций собирается из того, что есть на складах. */
+  canBuildCount: number;
   totalConfigurations: number;
 }
 
@@ -193,7 +199,6 @@ export function calculateWarehouseAnalytics(
   configurations: {
     id: number;
     name: string;
-    priority?: string;
     components: RecipeComponent[];
     totalValue?: number;
   }[]
@@ -204,19 +209,17 @@ export function calculateWarehouseAnalytics(
       config,
       availability,
       canBuild: availability.maxPossibleBuilds > 0,
-      priority: config.priority,
     };
   });
 
-  const highPriorityConfigs = configurationAnalytics.filter((a) => a.config.priority === "high");
-
   return {
     totalStockValue: stock.reduce((sum, i) => sum + (i.price ?? 0) * i.quantity, 0),
-    lowStockItems: stock.filter((i) => i.quantity <= (i.minStock ?? 0)),
+    lowStockItems: stock.filter(
+      (i) => (i.minStock ?? 0) > 0 && i.quantity <= (i.minStock ?? 0)
+    ),
     outOfStockItems: stock.filter((i) => i.quantity === 0),
     configurationAnalytics,
-    highPriorityConfigs,
-    canBuildHighPriority: highPriorityConfigs.filter((a) => a.canBuild).length,
+    canBuildCount: configurationAnalytics.filter((a) => a.canBuild).length,
     totalConfigurations: configurations.length,
   };
 }

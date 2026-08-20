@@ -60,6 +60,7 @@ const formSchema = z.object({
   description: z.string().optional(),
   website: z.string().url("Неверный URL").optional().or(z.literal("")),
   price: z.number().min(0, "Цена не может быть отрицательной").optional(),
+  minStock: z.number().min(0, "Минимальный запас не может быть отрицательным"),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -92,6 +93,7 @@ export function ItemActions({ item, categories, onDone }: ItemActionsProps) {
       description: "",
       website: "",
       price: undefined,
+      minStock: 0,
     },
   });
 
@@ -108,6 +110,7 @@ export function ItemActions({ item, categories, onDone }: ItemActionsProps) {
       description: item.description ?? "",
       website: item.url ?? "",
       price: item.price ?? undefined,
+      minStock: item.minStock ?? 0,
     });
     setEditOpen(true);
   };
@@ -119,6 +122,7 @@ export function ItemActions({ item, categories, onDone }: ItemActionsProps) {
         category: data.category,
         location: data.location,
         price: data.price,
+        minStock: data.minStock,
         description: data.description,
         url: data.website,
       });
@@ -356,6 +360,30 @@ export function ItemActions({ item, categories, onDone }: ItemActionsProps) {
                 />
                 {form.formState.errors.price && (
                   <p className="text-sm text-destructive">{form.formState.errors.price.message}</p>
+                )}
+              </div>
+              {/*
+                Минимальный запас задаётся здесь — раньше его нельзя было
+                указать нигде, поэтому у всех позиций он оставался нулём, а
+                «низкий запас» в статистике вырождался в «ноль на складе».
+              */}
+              <div>
+                <Label htmlFor="item-min-stock">Минимальный запас (шт.)</Label>
+                <Input
+                  id="item-min-stock"
+                  type="number"
+                  min="0"
+                  step="1"
+                  {...form.register("minStock", {
+                    setValueAs: (v) => (v === "" ? 0 : Number(v)),
+                  })}
+                  placeholder="0"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Ниже этого остатка изделие попадёт в «низкий запас». 0 — не следить.
+                </p>
+                {form.formState.errors.minStock && (
+                  <p className="text-sm text-destructive">{form.formState.errors.minStock.message}</p>
                 )}
               </div>
             </div>
