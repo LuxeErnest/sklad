@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
 import { Upload, X, Tag, Plus } from "lucide-react";
@@ -40,14 +39,18 @@ export interface AddItemPrefill {
 interface AddItemDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  categories: string[];
   tags: { id: number; name: string }[];
-  onAddItem: (item: Omit<InventoryItem, 'id'>, tagIds?: number[]) => void | Promise<void>;
-  onAddCategory: (category: string) => void;
+  /** Что уже есть на складе — для подсказок по названию и слияния одноимённых. */
+  items: InventoryItem[];
+  onAddItem: (
+    item: Omit<InventoryItem, 'id'>,
+    tagIds?: number[],
+    existingItemId?: number
+  ) => void | Promise<void>;
   prefill?: AddItemPrefill | null;
 }
 
-export const AddItemDialog = ({ open, onOpenChange, categories, tags, onAddItem, onAddCategory, prefill }: AddItemDialogProps) => {
+export const AddItemDialog = ({ open, onOpenChange, tags, items, onAddItem, prefill }: AddItemDialogProps) => {
   const [formData, setFormData] = useState({
     name: "",
     category: "",
@@ -60,8 +63,6 @@ export const AddItemDialog = ({ open, onOpenChange, categories, tags, onAddItem,
     description: "",
     barcode: "",
   });
-  const [newCategory, setNewCategory] = useState("");
-  const [showNewCategory, setShowNewCategory] = useState(false);
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
   const [newTagName, setNewTagName] = useState("");
   const [tagFilter, setTagFilter] = useState("");
@@ -69,9 +70,51 @@ export const AddItemDialog = ({ open, onOpenChange, categories, tags, onAddItem,
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Товар считается известным, если штрихкод опознан: тогда форма работает как
-  // поступление на склад, а не как заведение новой позиции.
-  const isReceipt = prefill?.existingItemId != null;
+  // Подсказки по названию: пока человек печатает, показываем то, что уже есть
+  // на складе. Выбор подсказки заполняет остальные поля и приходует количество
+  // к существующей позиции, а не заводит вторую с тем же именем.
+  const [nameSuggestionsOpen, setNameSuggestionsOpen] = useState(false);
+  const nameFieldRef = useRef<HTMLDivElement>(null);
+
+  /** Только номенклатура: собранные конфигурации приходовать нельзя. */
+  const knownItems = items.filter((i) => i.itemType !== "configuration");
+
+  const typedName = formData.name.trim().toLowerCase();
+
+  /**
+   * Позиция, к которой добавится количество.
+   *
+   * Совпадение по имени считается тем же товаром — так и просили: одинаковые
+   * названия должны сходиться в один остаток, а не размножать позиции. Раньше
+   * форма создавала вторую позицию с тем же именем, и склад расходился по
+   * дубликатам.
+   */
+  const matchedItem =
+    prefill?.existingItemId != null
+      ? knownItems.find((i) => i.id === prefill.existingItemId) ?? null
+      : typedName
+        ? knownItems.find((i) => i.name.trim().toLowerCase() === typedName) ?? null
+        : null;
+
+  const nameSuggestions =
+    typedName && !matchedItem
+      ? knownItems.filter((i) => i.name.toLowerCase().includes(typedName)).slice(0, 8)
+      : [];
+
+  // Форма работает как поступление, если позиция уже известна — по штрихкоду
+  // или по совпадению названия.
+  const isReceipt = matchedItem != null;
+
+  useEffect(() => {
+    if (!nameSuggestionsOpen) return;
+    const closeOnOutside = (e: MouseEvent) => {
+      if (nameFieldRef.current && !nameFieldRef.current.contains(e.target as Node)) {
+        setNameSuggestionsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", closeOnOutside);
+    return () => document.removeEventListener("mousedown", closeOnOutside);
+  }, [nameSuggestionsOpen]);
 
   useEffect(() => {
     if (!open) return;
@@ -97,6 +140,14 @@ export const AddItemDialog = ({ open, onOpenChange, categories, tags, onAddItem,
   const filteredTags = tagFilter.trim()
     ? allTagsForSelect.filter((t) => t.name.toLowerCase().includes(tagFilter.toLowerCase()))
     : allTagsForSelect;
+
+  /** Сколько тегов показывать списком, прежде чем отправить человека к поиску. */
+  const TAG_LIMIT = 24;
+  const selectedTags = allTagsForSelect.filter((t) => selectedTagIds.includes(t.id));
+  // Выбранные видны отдельным рядом, поэтому в списке предложений их не дублируем.
+  const suggestable = filteredTags.filter((t) => !selectedTagIds.includes(t.id));
+  const shownTags = suggestable.slice(0, TAG_LIMIT);
+  const hiddenTagCount = suggestable.length - shownTags.length;
   const toggleTag = (id: number) => {
     setSelectedTagIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
@@ -148,13 +199,15 @@ export const AddItemDialog = ({ open, onOpenChange, categories, tags, onAddItem,
     }
 
     try {
-      await onAddItem(newItem as Omit<InventoryItem, 'id'>, selectedTagIds.length ? selectedTagIds : undefined);
+      await onAddItem(
+        newItem as Omit<InventoryItem, 'id'>,
+        selectedTagIds.length ? selectedTagIds : undefined,
+        matchedItem?.id
+      );
       setFormData({
         name: "", category: "", quantity: "", location: "", price: "", url: "",
         imageUrl: "", imageBase64: "", description: "", barcode: "",
       });
-      setNewCategory("");
-      setShowNewCategory(false);
       setSelectedTagIds([]);
       setNewTagName("");
       setTagFilter("");
@@ -165,17 +218,26 @@ export const AddItemDialog = ({ open, onOpenChange, categories, tags, onAddItem,
     }
   };
 
-  const handleAddCategory = () => {
-    if (newCategory.trim() && !categories.includes(newCategory.trim())) {
-      onAddCategory(newCategory.trim());
-      setFormData(prev => ({ ...prev, category: newCategory.trim() }));
-      setNewCategory("");
-      setShowNewCategory(false);
-      toast({
-        title: "Категория добавлена",
-        description: `Категория "${newCategory.trim()}" создана`,
-      });
-    }
+  /**
+   * Подставляет в форму всё, что известно о выбранной позиции.
+   *
+   * Количество и место не заполняются намеренно: именно их человек и пришёл
+   * указать, а остальное — повторный набор того же самого.
+   */
+  const applyExistingItem = (item: InventoryItem) => {
+    setFormData((prev) => ({
+      ...prev,
+      name: item.name,
+      category: item.category ?? "",
+      price: item.price != null ? String(item.price) : "",
+      url: item.url ?? "",
+      description: item.description ?? "",
+      barcode: item.barcode ?? "",
+      imageUrl: item.imageUrl ?? "",
+      imageBase64: "",
+    }));
+    setSelectedTagIds([]);
+    setNameSuggestionsOpen(false);
   };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -252,55 +314,62 @@ export const AddItemDialog = ({ open, onOpenChange, categories, tags, onAddItem,
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="name">Название *</Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                placeholder="Название товара"
-                required
-              />
+              <div className="relative" ref={nameFieldRef}>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => {
+                    setFormData((prev) => ({ ...prev, name: e.target.value }));
+                    setNameSuggestionsOpen(true);
+                  }}
+                  onFocus={() => setNameSuggestionsOpen(true)}
+                  placeholder="Название товара"
+                  autoComplete="off"
+                  required
+                />
+                {nameSuggestionsOpen && nameSuggestions.length > 0 && (
+                  <ul className="absolute z-50 mt-1 w-full overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md">
+                    {nameSuggestions.map((suggestion) => (
+                      <li key={suggestion.id}>
+                        <button
+                          type="button"
+                          onClick={() => applyExistingItem(suggestion)}
+                          className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                        >
+                          <span className="truncate">{suggestion.name}</span>
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {suggestion.quantity} шт.
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              {matchedItem && (
+                <p className="text-xs text-muted-foreground">
+                  Такое изделие уже есть — {matchedItem.quantity} шт. Количество добавится к нему,
+                  вторая позиция не появится.
+                </p>
+              )}
             </div>
             
             <div className="space-y-2">
               <Label htmlFor="category">Категория *</Label>
-              {showNewCategory ? (
-                <div className="flex gap-2">
-                  <Input
-                    value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value)}
-                    placeholder="Название новой категории"
-                    onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
-                  />
-                  <Button type="button" size="sm" onClick={handleAddCategory}>
-                    Добавить
-                  </Button>
-                  <Button type="button" size="sm" variant="outline" onClick={() => setShowNewCategory(false)}>
-                    Отмена
-                  </Button>
-                </div>
-              ) : (
-                <Select
-                  value={formData.category}
-                  onValueChange={(value) => {
-                    if (value === "new") {
-                      setShowNewCategory(true);
-                    } else {
-                      setFormData(prev => ({ ...prev, category: value }));
-                    }
-                  }}
-                  required
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Выберите категорию" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((cat) => (
-                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                    ))}
-                    <SelectItem value="new">+ Новая категория</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
+              {/*
+                Обычное поле, без выпадающего списка. Выбирать категорию из
+                списка тут незачем: у известного изделия она подставляется сама,
+                а для нового её всё равно надо назвать. Несуществующая категория
+                создаётся при сохранении.
+              */}
+              <Input
+                id="category"
+                value={formData.category}
+                onChange={(e) => setFormData((prev) => ({ ...prev, category: e.target.value }))}
+                placeholder="Например: Метизы"
+                autoComplete="off"
+                required
+              />
             </div>
           </div>
 
@@ -456,14 +525,29 @@ export const AddItemDialog = ({ open, onOpenChange, categories, tags, onAddItem,
               <Tag className="h-4 w-4" />
               Теги (опционально)
             </Label>
+            {/*
+              Выбранные теги показываются отдельно и всегда. Раньше выбранные
+              подсвечивались в общем списке — и стоило отфильтровать список
+              поиском, как выбор пропадал из глаз: непонятно, что уже отмечено.
+            */}
+            {selectedTags.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {selectedTags.map((t) => (
+                  <Badge key={t.id} className="cursor-pointer gap-1" onClick={() => toggleTag(t.id)}>
+                    {t.name}
+                    <X className="h-3 w-3" />
+                  </Badge>
+                ))}
+              </div>
+            )}
             <Input
               placeholder="Поиск тега..."
               value={tagFilter}
               onChange={(e) => setTagFilter(e.target.value)}
             />
-            <ScrollArea className="max-h-[120px] border rounded-md p-2">
+            <ScrollArea className="max-h-[140px] border rounded-md p-2">
               <div className="flex flex-wrap gap-2">
-                {filteredTags.map((t) => (
+                {shownTags.map((t) => (
                   <Badge
                     key={t.id}
                     variant={selectedTagIds.includes(t.id) ? "default" : "outline"}
@@ -473,7 +557,21 @@ export const AddItemDialog = ({ open, onOpenChange, categories, tags, onAddItem,
                     {t.name}
                   </Badge>
                 ))}
+                {shownTags.length === 0 && (
+                  <span className="text-sm text-muted-foreground">
+                    {tagFilter ? "Ничего не найдено" : "Тегов пока нет"}
+                  </span>
+                )}
               </div>
+              {/*
+                Список ограничен: при сотне тегов рисовать их все — значит
+                предлагать человеку искать глазами то, для чего есть поиск.
+              */}
+              {hiddenTagCount > 0 && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Ещё {hiddenTagCount} — уточните поиск
+                </p>
+              )}
             </ScrollArea>
             <div className="flex gap-2">
               <Input

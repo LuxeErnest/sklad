@@ -8,7 +8,7 @@ import UniversalBackground from "@/components/UniversalBackground";
 import Seo from "@/components/seo/Seo";
 import { useMemo, useState, useEffect, useCallback } from "react";
 
-import { upsertComponent, createCategory, setComponentTags, addComponentGroup, setComponentBarcode } from "@/lib/db";
+import { upsertComponent, setComponentTags, addComponentGroup, setComponentBarcode } from "@/lib/db";
 import { toast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/services/errorHandler";
 import { useBarcodeScanner } from "@/hooks/useBarcodeScanner";
@@ -212,21 +212,26 @@ const Index = () => {
       }
     : null;
 
-  const handleAddItem = async (newItem: Omit<InventoryItem, 'id'>, tagIds?: number[]) => {
+  const handleAddItem = async (
+    newItem: Omit<InventoryItem, 'id'>,
+    tagIds?: number[],
+    existingItemId?: number
+  ) => {
     if (addingItem) return;
     setAddingItem(true);
     let step = "сохранение товара в базу";
     try {
-      // Если штрихкод опознан, позиция уже есть: нужно оприходовать
-      // количество на склад, а не заводить вторую такую же карточку.
-      const id = addPrefill?.existingItemId
+      // Позиция уже известна — по опознанному штрихкоду или по совпадению
+      // названия. Тогда количество приходуется на склад, а вторая карточка с
+      // тем же именем не заводится.
+      const id = existingItemId
         ? await addComponentGroup({
-            componentId: addPrefill.existingItemId,
-            name: "Поступление по штрихкоду",
+            componentId: existingItemId,
+            name: "Поступление",
             location: newItem.location,
             quantity: newItem.quantity,
             price: newItem.price ?? undefined,
-          }).then(() => addPrefill.existingItemId!)
+          }).then(() => existingItemId)
         : await upsertComponent({
             name: newItem.name,
             category: newItem.category,
@@ -247,8 +252,10 @@ const Index = () => {
       window.dispatchEvent(new CustomEvent('componentsUpdated'));
       await refreshItems();
       toast({
-        title: "Товар добавлен",
-        description: `Товар "${newItem.name}" успешно добавлен`,
+        title: existingItemId ? "Количество оприходовано" : "Товар добавлен",
+        description: existingItemId
+          ? `«${newItem.name}» — ${newItem.quantity} шт. на «${newItem.location}»`
+          : `Товар «${newItem.name}» успешно добавлен`,
       });
     } catch (error) {
       const msg = getErrorMessage(error);
@@ -264,24 +271,6 @@ const Index = () => {
       throw error;
     } finally {
       setAddingItem(false);
-    }
-  };
-
-  const handleAddCategory = async (newCategory: string) => {
-    try {
-      await createCategory(newCategory.trim(), null);
-      await refreshItems();
-      toast({
-        title: "Категория добавлена",
-        description: `Категория "${newCategory}" создана`,
-      });
-    } catch (error) {
-      console.error('❌ Error creating category:', error);
-      toast({
-        title: "Ошибка",
-        description: getErrorMessage(error),
-        variant: "destructive",
-      });
     }
   };
 
@@ -340,10 +329,9 @@ const Index = () => {
           setShowAddDialog(open);
           if (!open) setAddPrefill(null);
         }}
-        categories={categories}
         tags={tags}
+        items={items}
         onAddItem={handleAddItem}
-        onAddCategory={handleAddCategory}
         prefill={addPrefill}
       />
 
