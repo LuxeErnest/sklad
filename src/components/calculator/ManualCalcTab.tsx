@@ -1,4 +1,3 @@
-import type { Dispatch, SetStateAction } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,7 +23,6 @@ interface ManualCalcTabProps {
   setSelectedCategory: (value: string) => void;
   updateQuantity: (itemId: number, quantity: number) => void;
   clearSelections: () => void;
-  setShowDetailedAnalytics: Dispatch<SetStateAction<boolean>>;
 }
 
 /**
@@ -45,7 +43,6 @@ export const ManualCalcTab = ({
   setSelectedCategory,
   updateQuantity,
   clearSelections,
-  setShowDetailedAnalytics,
 }: ManualCalcTabProps) => (
   <TabsContent value="manual" className="space-y-6">
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6">

@@ -77,42 +77,59 @@ export const useBarcodeScanner = (options?: UseBarcodeScannerOptions) => {
     scanRef.current = handleBarcodeScan;
   }, [handleBarcodeScan]);
 
-  // Глобальный обработчик для быстрого ввода штрихкода
+  /**
+   * Сканер как клавиатура.
+   *
+   * Ручной сканер печатает код и завершает его переводом строки — то есть для
+   * окна выглядит обычным набором с клавиатуры. Поэтому кнопку нажимать не
+   * нужно: достаточно отсканировать, находясь на любом экране. Кнопка остаётся
+   * для случая, когда кода под рукой нет и его вводят вручную.
+   *
+   * От набора руками сканер отличается скоростью: символы приходят через
+   * единицы миллисекунд, человек так не печатает. Без этой проверки несколько
+   * цифр и Enter, набранные мимо поля ввода, выглядели бы как сканирование.
+   *
+   * Слушается keydown, а не keypress: keypress объявлен устаревшим и для части
+   * клавиш в разных движках не срабатывает вовсе.
+   */
   useEffect(() => {
-    let barcodeBuffer = "";
-    let lastKeyTime = Date.now();
+    /** Наибольший промежуток между символами, при котором это ещё сканер. */
+    const MAX_GAP_MS = 50;
+    /** Короче этого код не бывает — иначе сработает случайный набор. */
+    const MIN_LENGTH = 4;
 
-    const handleKeyPress = (e: KeyboardEvent) => {
-      // Игнорируем если фокус в input/textarea
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+    let buffer = "";
+    let lastKeyAt = 0;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Если фокус в поле ввода, символы уходят туда — это обычный набор, и
+      // перехватывать его нельзя: человек может печатать в поиске.
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) return;
+
+      const now = performance.now();
+      const gap = now - lastKeyAt;
+      lastKeyAt = now;
+
+      if (e.key === "Enter") {
+        const code = buffer;
+        buffer = "";
+        if (code.length >= MIN_LENGTH) {
+          e.preventDefault();
+          scanRef.current(code);
+        }
         return;
       }
 
-      const now = Date.now();
-      
-      // Если прошло больше 500ms с последнего символа, сбрасываем буфер
-      if (now - lastKeyTime > 500) {
-        barcodeBuffer = "";
-      }
-
-      lastKeyTime = now;
-
-      // Добавляем символ в буфер
-      if (e.key.length === 1 && /[0-9a-zA-Z]/.test(e.key)) {
-        barcodeBuffer += e.key;
-      }
-
-      // Если нажат Enter и буфер не пустой, ищем товар
-      if (e.key === 'Enter' && barcodeBuffer.length >= 3) {
-        e.preventDefault();
-        scanRef.current(barcodeBuffer);
-        barcodeBuffer = "";
+      if (e.key.length === 1 && /[0-9A-Za-z]/.test(e.key)) {
+        // Пауза больше порога — начало нового кода, а не продолжение прежнего.
+        buffer = gap > MAX_GAP_MS ? e.key : buffer + e.key;
       }
     };
 
-    window.addEventListener('keypress', handleKeyPress);
-    return () => window.removeEventListener('keypress', handleKeyPress);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   return {

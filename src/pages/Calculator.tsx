@@ -52,7 +52,7 @@ const Calculator = () => {
   const { items, categories } = useApp();
   const [configurations, setConfigurations] = useState<ConfigurationRow[]>(NO_CONFIGURATIONS);
   const [warehouseStats, setWarehouseStats] = useState<Partial<WarehouseStatistics>>({});
-  const [showDetailedAnalytics, setShowDetailedAnalytics] = useState(true);
+  const [showOutOfStockList, setShowOutOfStockList] = useState(true);
   const [scrappedItems, setScrappedItems] = useState<ScrappedRow[]>([]);
 
   // Use items from context with minStock
@@ -289,7 +289,6 @@ const Calculator = () => {
                 setSelectedCategory={setSelectedCategory}
                 updateQuantity={updateQuantity}
                 clearSelections={clearSelections}
-                setShowDetailedAnalytics={setShowDetailedAnalytics}
               />
 
               <ScrapTab scrappedItems={scrappedItems} />
@@ -301,8 +300,8 @@ const Calculator = () => {
                 configurations={configurations}
                 warehouseStats={warehouseStats}
                 calculateConfigurationAvailability={calculateConfigurationAvailability}
-                showDetailedAnalytics={showDetailedAnalytics}
-                setShowDetailedAnalytics={setShowDetailedAnalytics}
+                showOutOfStockList={showOutOfStockList}
+                setShowOutOfStockList={setShowOutOfStockList}
                 getPriorityBadge={getPriorityBadge}
               />
 
