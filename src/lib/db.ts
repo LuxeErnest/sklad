@@ -615,8 +615,11 @@ export async function getConfigurations() {
     totalValue: c.totalValue,
     totalItems: c.components.reduce((sum, x) => sum + x.quantity, 0),
     createdAt: (c.createdAt || "").split("T")[0],
-    category: "Конфигурации",
-    location: "",
+    // Категория и место берутся у результирующего изделия. Прежде здесь стояли
+    // жёсткая строка «Конфигурации» и пустое место — и форма сборки подставляла
+    // в свои поля именно их, вместо настоящих значений.
+    category: c.resultCategory ?? "",
+    location: c.resultLocation ?? "",
     assembled: c.assembled,
     canAssemble: c.canAssemble,
     resultItemId: c.resultItemId,
@@ -669,9 +672,16 @@ export async function createConfiguration(payload: {
   return id;
 }
 
+/**
+ * Правит конфигурацию.
+ *
+ * Расположения здесь нет намеренно: у рецепта его быть не может, место
+ * появляется у собранных единиц и указывается при сборке. Раньше параметр
+ * принимался и молча выбрасывался.
+ */
 export async function updateConfiguration(
   id: number,
-  updates: { name?: string; description?: string; category?: string; location?: string }
+  updates: { name?: string; description?: string; category?: string }
 ) {
   const existing = await getConfigurationComponents(id);
   await invoke("save_configuration", {

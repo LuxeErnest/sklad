@@ -24,6 +24,8 @@ type ConfigurationRow = (
     String,
     Option<String>,
     Quantity,
+    Option<String>,
+    Option<String>,
 );
 
 #[derive(Debug, Serialize, ts_rs::TS)]
@@ -58,6 +60,15 @@ pub struct ConfigurationView {
     pub can_assemble: i64,
     pub components: Vec<ConfigurationComponent>,
     pub total_value: f64,
+    /// Категория результирующего изделия.
+    ///
+    /// У самой конфигурации категории нет и быть не может: категория — свойство
+    /// номенклатуры, а конфигурация это рецепт. Раньше фронтенд подставлял здесь
+    /// строку «Конфигурации» для всех сразу, и форма сборки предлагала её же
+    /// вместо настоящей.
+    pub result_category: Option<String>,
+    /// Место с наибольшим остатком результирующего изделия.
+    pub result_location: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ts_rs::TS)]
@@ -94,7 +105,11 @@ pub fn list(db: &Db) -> DbResult<Vec<ConfigurationView>> {
             "SELECT c.id, c.name, c.description, c.result_item_id, ri.name, c.created_at,
                     c.archived_at,
                     COALESCE((SELECT SUM(s.quantity) FROM stock s
-                               WHERE s.item_id = c.result_item_id), 0)
+                               WHERE s.item_id = c.result_item_id), 0),
+                    (SELECT cat.name FROM categories cat WHERE cat.id = ri.category_id),
+                    (SELECT l.name FROM stock s JOIN locations l ON l.id = s.location_id
+                      WHERE s.item_id = c.result_item_id
+                      ORDER BY s.quantity DESC LIMIT 1)
                FROM configurations c
                JOIN items ri ON ri.id = c.result_item_id
               ORDER BY c.name COLLATE NOCASE",
@@ -110,6 +125,8 @@ pub fn list(db: &Db) -> DbResult<Vec<ConfigurationView>> {
                     row.get(5)?,
                     row.get(6)?,
                     row.get(7)?,
+                    row.get(8)?,
+                    row.get(9)?,
                 ))
             })?
             .collect::<rusqlite::Result<_>>()?;
@@ -155,7 +172,7 @@ pub fn list(db: &Db) -> DbResult<Vec<ConfigurationView>> {
         drop(comp_stmt);
 
         let mut out = Vec::new();
-        for (id, name, description, result_item_id, result_name, created_at, archived_at, assembled) in
+        for (id, name, description, result_item_id, result_name, created_at, archived_at, assembled, result_category, result_location) in
             heads
         {
             let rows = by_configuration.remove(&id.get()).unwrap_or_default();
@@ -190,6 +207,8 @@ pub fn list(db: &Db) -> DbResult<Vec<ConfigurationView>> {
                 can_assemble,
                 components,
                 total_value,
+                result_category,
+                result_location,
             });
         }
         Ok(out)
@@ -229,6 +248,28 @@ pub fn save(db: &Db, input: ConfigurationInput) -> DbResult<ConfigurationId> {
                       WHERE id = (SELECT result_item_id FROM configurations WHERE id = ?3)",
                     params![name, now, id],
                 )?;
+
+                // Категория относится к результирующему изделию. При правке она
+                // прежде не применялась вовсе: поле в форме сборки требовалось
+                // заполнить, а на данные оно не влияло.
+                if let Some(category) = input
+                    .category
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                {
+                    tx.execute(
+                        "INSERT OR IGNORE INTO categories (name, parent_id) VALUES (?1, NULL)",
+                        params![category],
+                    )?;
+                    tx.execute(
+                        "UPDATE items SET category_id = (
+                             SELECT id FROM categories WHERE name = ?1 AND parent_id IS NULL
+                         ), updated_at = ?2
+                          WHERE id = (SELECT result_item_id FROM configurations WHERE id = ?3)",
+                        params![category, now, id],
+                    )?;
+                }
                 tx.execute(
                     "DELETE FROM configuration_items WHERE configuration_id = ?1",
                     params![id],

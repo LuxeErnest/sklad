@@ -106,9 +106,13 @@ export function calculateConfigurationAvailability(
   return {
     items,
     maxPossibleBuilds: Math.max(maxPossibleBuilds, 0),
-    allAvailable: items.every((i) => i.status === "available"),
+    // Пустой состав отдельно оговорён: `[].every()` истинно, поэтому раньше
+    // конфигурация без компонентов считалась и «полностью доступной», и
+    // «недоступной» сразу — в сводке она попадала в две графы из трёх.
+    // Собрать из ничего нельзя, поэтому такая конфигурация недоступна.
+    allAvailable: items.length > 0 && items.every((i) => i.status === "available"),
     anyAvailable: items.some((i) => i.status === "available"),
-    noneAvailable: items.every((i) => i.status === "unavailable"),
+    noneAvailable: items.length === 0 || items.every((i) => i.status === "unavailable"),
     availableCount: items.filter((i) => i.status === "available").length,
     totalCount: items.length,
     totalValue: (config.totalValue ?? 0) * Math.max(maxPossibleBuilds, 0),

@@ -14,7 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { Wrench, Plus, Save, Trash2, Package, Banknote, Calculator, CheckCircle, AlertCircle, XCircle, PackageOpen, RotateCcw } from "lucide-react";
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { getConfigurations, getConfigurationComponents, createConfiguration, deleteConfiguration, getAssembledCounts, assembleConfiguration, disassembleConfiguration, writeOffConfiguration, updateConfiguration } from "@/lib/db";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, plural } from "@/lib/utils";
 import {
   calculateConfigurationAvailability,
   type AvailabilityStatus,
@@ -307,12 +307,10 @@ const Configurations = () => {
     return sorted;
   }, [configurations, search, availabilityFilter, sortBy]);
 
-  const summary = { 
-    name: "Конфигурации", 
-    quantity: filteredConfigurations.length, 
-    location: "Склад", 
-    category: "Сборки" 
-  };
+  // Полоса сводки в шапке рассчитана на выбранный товар, а здесь его нет:
+  // «Расположение: Склад» и «Категория: Сборки» были выдуманы, а число
+  // конфигураций показывалось как количество в штуках.
+  const summary = null;
 
   return (
     <div className="min-h-screen relative">
@@ -425,7 +423,7 @@ const Configurations = () => {
                             )}
                             <span className="flex items-center gap-1">
                               <Package className="h-4 w-4" />
-                              {config.totalItems} компонентов
+                              {config.totalItems} {plural(config.totalItems, "компонент", "компонента", "компонентов")}
                             </span>
                             <span className="flex items-center gap-1">
                               <Banknote className="h-4 w-4" />
@@ -438,7 +436,7 @@ const Configurations = () => {
                             </span>
                           </div>
                           <div className="mt-2 text-xs text-muted-foreground">
-                            Доступность: {availability.availableCount}/{availability.totalCount} компонентов
+                            Доступность: {availability.availableCount} из {availability.totalCount} {plural(availability.totalCount, "компонента", "компонентов", "компонентов")}
                           </div>
                         </div>
                       );
@@ -498,19 +496,6 @@ const Configurations = () => {
                     </div>
                   </div>
                   
-                  <Separator className="my-4" />
-                  
-                  <div>
-                    <h4 className="font-medium mb-3">Популярные компоненты</h4>
-                    <div className="space-y-2">
-                      {components.slice(0, 5).map(component => (
-                        <div key={component.id} className="flex justify-between items-center text-sm">
-                          <span>{component.name}</span>
-                          <Badge variant="secondary">{component.quantity} шт.</Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -846,13 +831,18 @@ const Configurations = () => {
                   onClick={async () => {
                     setActionLoading(true);
                     try {
+                      // Категория относится к результирующему изделию, поэтому
+                      // сохраняется отдельно. Расположение передаётся самой
+                      // сборке: раньше его здесь не передавали, и собранное
+                      // ложилось на склад по умолчанию, а не на указанный —
+                      // поле было обязательным и не делало ничего.
                       await updateConfiguration(selectedConfiguration.id, {
                         category: assembleCategory.trim(),
-                        location: assembleLocation.trim(),
                       });
                       const res = await assembleConfiguration({
                         configurationId: selectedConfiguration.id,
                         quantity: assembleQuantity,
+                        location: assembleLocation.trim(),
                         notes: "Сборка с указанием категории и расположения",
                       });
                       if (res.success) {

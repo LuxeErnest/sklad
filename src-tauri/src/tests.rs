@@ -605,3 +605,60 @@ fn мёртвый_запас_это_остаток_без_движения() {
     assert_eq!(запись.value, 1000.0, "10 штук по 100");
     assert!(запись.last_movement_at.is_some(), "поступление — это движение");
 }
+
+/// Категория конфигурации применяется к её результирующему изделию и при правке.
+///
+/// Раньше она учитывалась только при создании: форма сборки требовала заполнить
+/// поле «Категория», а на данные это не влияло.
+#[test]
+fn правка_конфигурации_меняет_категорию_результата() {
+    let db = db();
+    let комплектующая = item(&db, "Плата");
+    let склад = location(&db, "Склад");
+    receive(&db, комплектующая, склад, 10);
+
+    let id = configurations::save(
+        &db,
+        ConfigurationInput {
+            id: None,
+            name: "Блок".to_string(),
+            description: None,
+            category: Some("Сборки".to_string()),
+            components: vec![ConfigurationComponentInput {
+                item_id: комплектующая,
+                quantity: 1,
+            }],
+        },
+    )
+    .unwrap();
+
+    let категория = |db: &crate::db::Db| {
+        configurations::list(db)
+            .unwrap()
+            .into_iter()
+            .find(|c| c.id == id)
+            .unwrap()
+            .result_category
+    };
+    assert_eq!(категория(&db).as_deref(), Some("Сборки"));
+
+    configurations::save(
+        &db,
+        ConfigurationInput {
+            id: Some(id),
+            name: "Блок".to_string(),
+            description: None,
+            category: Some("Готовые изделия".to_string()),
+            components: vec![ConfigurationComponentInput {
+                item_id: комплектующая,
+                quantity: 1,
+            }],
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        категория(&db).as_deref(),
+        Some("Готовые изделия"),
+        "правка должна менять категорию результата"
+    );
+}

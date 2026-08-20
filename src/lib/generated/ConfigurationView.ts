@@ -11,4 +11,17 @@ assembled: number,
 /**
  * Сколько ещё можно собрать из того, что есть на складах.
  */
-canAssemble: number, components: Array<ConfigurationComponent>, totalValue: number, };
+canAssemble: number, components: Array<ConfigurationComponent>, totalValue: number, 
+/**
+ * Категория результирующего изделия.
+ *
+ * У самой конфигурации категории нет и быть не может: категория — свойство
+ * номенклатуры, а конфигурация это рецепт. Раньше фронтенд подставлял здесь
+ * строку «Конфигурации» для всех сразу, и форма сборки предлагала её же
+ * вместо настоящей.
+ */
+resultCategory: string | null, 
+/**
+ * Место с наибольшим остатком результирующего изделия.
+ */
+resultLocation: string | null, };
