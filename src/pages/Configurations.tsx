@@ -46,6 +46,7 @@ const NO_CONFIGURATIONS: ConfigurationRow[] = [];
 const formSchema = z.object({
   name: z.string().min(1, "Название обязательно"),
   description: z.string().optional(),
+  category: z.string().optional(),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -151,6 +152,7 @@ const Configurations = () => {
     defaultValues: {
       name: "",
       description: "",
+      category: "",
     },
   });
 
@@ -211,6 +213,7 @@ const Configurations = () => {
       await createConfiguration({
         name: data.name,
         description: data.description || "",
+        category: data.category?.trim() || undefined,
         components: componentsPayload,
       });
 
@@ -533,6 +536,24 @@ const Configurations = () => {
                   {...form.register("description")}
                   placeholder="Описание конфигурации"
                 />
+              </div>
+              {/*
+                Категория относится к изделию, которое получается на выходе:
+                собранная единица лежит на складе как всё остальное и должна
+                где-то числиться. Поле обычное, без списка — как в форме
+                добавления товара. Незаполненное даёт «Конфигурации».
+              */}
+              <div>
+                <Label htmlFor="config-category">Категория результата</Label>
+                <Input
+                  id="config-category"
+                  {...form.register("category")}
+                  placeholder="Конфигурации"
+                  autoComplete="off"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Под этой категорией собранное появится на складе
+                </p>
               </div>
             </div>
 
