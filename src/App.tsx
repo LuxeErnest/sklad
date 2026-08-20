@@ -19,7 +19,6 @@ import Index from "./pages/Index";
   целиком до появления первого кадра, хотя при запуске нужен один экран.
 */
 const Calculator = lazy(() => import("./pages/Calculator"));
-const Edit = lazy(() => import("./pages/Edit"));
 const Configurations = lazy(() => import("./pages/Configurations"));
 const Documents = lazy(() => import("./pages/Documents"));
 const Journal = lazy(() => import("./pages/Journal"));
@@ -59,7 +58,6 @@ const App = () => {
                   <Routes>
                   <Route path="/" element={<Index />} />
                   <Route path="/calculator" element={<Calculator />} />
-                  <Route path="/edit" element={<Edit />} />
                   <Route path="/configurations" element={<Configurations />} />
                   <Route path="/documents" element={<Documents />} />
                   <Route path="/journal" element={<Journal />} />

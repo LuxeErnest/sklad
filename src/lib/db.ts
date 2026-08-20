@@ -442,13 +442,18 @@ export async function addComponentGroup(payload: {
 
 // ---------- Списание ----------
 
-export async function scrapFromLocation(componentId: number, location: string, quantity: number) {
+export async function scrapFromLocation(
+  componentId: number,
+  location: string,
+  quantity: number,
+  reason?: string
+) {
   const fromLocationId = await locationIdByName(location, false);
   await invoke("register_operation", {
     input: {
       kind: "writeoff",
       performedBy: "Пользователь",
-      note: `Списание со склада «${location}»`,
+      note: reason?.trim() || `Списание со склада «${location}»`,
       lines: [{ itemId: componentId, fromLocationId, quantity }],
     },
   });
@@ -456,7 +461,7 @@ export async function scrapFromLocation(componentId: number, location: string, q
   return quantity;
 }
 
-export async function scrapAllFromAllLocations(componentId: number) {
+export async function scrapAllFromAllLocations(componentId: number, reason?: string) {
   const groups = await getComponentGroups(componentId);
   const lines = groups
     .filter((g) => g.quantity > 0)
@@ -466,40 +471,13 @@ export async function scrapAllFromAllLocations(componentId: number) {
     input: {
       kind: "writeoff",
       performedBy: "Пользователь",
-      note: "Полное списание со всех складов",
+      note: reason?.trim() || "Полное списание со всех складов",
       lines,
     },
   });
   notify("componentsUpdated");
 }
 
-/**
- * Списание с указанием причины.
- *
- * Флага «менять ли количество» больше нет: списание по определению уменьшает
- * остаток. Раньше он был необязательным и по умолчанию остаток не трогал.
- */
-export async function addScrappedItem(payload: {
-  componentId: number; quantity: number; reason?: string; scrappedBy?: string;
-  location?: string; updateQuantity?: boolean;
-}) {
-  const groups = await getComponentGroups(payload.componentId);
-  const source = payload.location
-    ? groups.find((g) => g.location === payload.location)
-    : groups.find((g) => g.quantity >= payload.quantity) ?? groups[0];
-  if (!source) throw new Error("Нет остатка, который можно списать");
-
-  const id = await invoke<number>("register_operation", {
-    input: {
-      kind: "writeoff",
-      performedBy: payload.scrappedBy || "Пользователь",
-      note: payload.reason,
-      lines: [{ itemId: payload.componentId, fromLocationId: source.id, quantity: payload.quantity }],
-    },
-  });
-  notify("componentsUpdated");
-  return id;
-}
 
 /** Строка списания в том виде, в каком её показывают отчёты. */
 export type ScrappedRow = Awaited<ReturnType<typeof getScrappedItems>>[number];

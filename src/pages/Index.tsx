@@ -324,7 +324,11 @@ const Index = () => {
               />
             </section>
             <aside aria-label="Информация о товаре">
-              <ItemBriefInfo item={selectedItem} />
+              <ItemBriefInfo
+                item={selectedItem}
+                categories={categories}
+                onRefresh={refreshItems}
+              />
             </aside>
           </main>
         </div>

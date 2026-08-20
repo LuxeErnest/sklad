@@ -415,3 +415,100 @@ fn отметки_времени_в_одном_формате() {
     assert!(stamp.ends_with('Z'), "время должно заканчиваться на Z: {}", stamp);
     assert!(!stamp.contains('+'), "смещение вместо Z ломает сравнение: {}", stamp);
 }
+
+// ---------- Освобождённые теги и категории ----------
+
+/// Тег исчезает, когда его отпустила последняя позиция.
+///
+/// Отдельного места, где теги удаляют вручную, больше нет: страница «Изменить»
+/// убрана, а её кнопки переехали в панель товара.
+#[test]
+fn тег_удаляется_когда_его_отпустила_последняя_позиция() {
+    let db = db();
+    let первый = item(&db, "Болт");
+    let второй = item(&db, "Гайка");
+    let тег = catalog::create_tag_on(&db, "метиз".to_string()).unwrap();
+
+    catalog::set_item_tags_on(&db, первый.get(), vec![тег]).unwrap();
+    catalog::set_item_tags_on(&db, второй.get(), vec![тег]).unwrap();
+    assert_eq!(count(&db, "tags"), 1);
+
+    // Первая позиция отпустила тег — вторая ещё держит, удалять нельзя.
+    catalog::set_item_tags_on(&db, первый.get(), vec![]).unwrap();
+    assert_eq!(count(&db, "tags"), 1, "тег ещё используется второй позицией");
+
+    catalog::set_item_tags_on(&db, второй.get(), vec![]).unwrap();
+    assert_eq!(count(&db, "tags"), 0, "тег отпущен всеми и должен исчезнуть");
+}
+
+/// Тег, созданный впрок и ни разу не назначенный, остаётся.
+#[test]
+fn неназначенный_тег_не_удаляется() {
+    let db = db();
+    let item_id = item(&db, "Болт");
+    let впрок = catalog::create_tag_on(&db, "на будущее".to_string()).unwrap();
+    let рабочий = catalog::create_tag_on(&db, "метиз".to_string()).unwrap();
+
+    catalog::set_item_tags_on(&db, item_id.get(), vec![рабочий]).unwrap();
+    catalog::set_item_tags_on(&db, item_id.get(), vec![]).unwrap();
+
+    assert_eq!(
+        count(&db, "tags"),
+        1,
+        "назначенный тег отпущен и удалён, созданный впрок остался"
+    );
+    let остался: i64 = db
+        .with(|conn| Ok(conn.query_row("SELECT id FROM tags", [], |r| r.get(0))?))
+        .unwrap();
+    assert_eq!(остался, впрок, "остаться должен именно созданный впрок");
+}
+
+/// Категория исчезает, когда её покинула последняя позиция.
+#[test]
+fn категория_удаляется_когда_её_покинула_последняя_позиция() {
+    let db = db();
+    let id = catalog::save_item_on(
+        &db,
+        catalog::ItemInput {
+            id: None,
+            name: "Болт".to_string(),
+            category: Some("Метизы".to_string()),
+            unit: None,
+            price: None,
+            min_stock: None,
+            barcode: None,
+            description: None,
+            url: None,
+            image_path: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(count(&db, "categories"), 1);
+
+    // Позиция переехала в другую категорию — прежняя опустела.
+    catalog::save_item_on(
+        &db,
+        catalog::ItemInput {
+            id: Some(id),
+            name: "Болт".to_string(),
+            category: Some("Крепёж".to_string()),
+            unit: None,
+            price: None,
+            min_stock: None,
+            barcode: None,
+            description: None,
+            url: None,
+            image_path: None,
+        },
+    )
+    .unwrap();
+
+    let имена: Vec<String> = db
+        .with(|conn| {
+            let mut st = conn.prepare("SELECT name FROM categories ORDER BY name")?;
+            let rows = st.query_map([], |r| r.get::<_, String>(0))?;
+            Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        })
+        .unwrap();
+    assert_eq!(имена, vec!["Крепёж".to_string()], "опустевшая категория должна исчезнуть");
+}

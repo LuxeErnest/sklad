@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Package, ChevronRight, ScanLine, TriangleAlert } from "lucide-react";
 import { getLastMovement } from "@/lib/db";
 import type { OperationLineView } from "@/lib/generated";
+import { ItemActions } from "./ItemActions";
 import { InventoryItem } from "./InventoryTable";
 
 /**
@@ -19,6 +20,10 @@ import { InventoryItem } from "./InventoryTable";
 
 interface ItemBriefInfoProps {
   item: InventoryItem | null;
+  /** Категории для выбора при правке. */
+  categories: string[];
+  /** Перечитать данные после изменения. */
+  onRefresh: () => void | Promise<void>;
 }
 
 const KIND_LABELS: Record<string, string> = {
@@ -43,7 +48,7 @@ function movementDate(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso.slice(0, 10) : d.toLocaleDateString("ru-RU");
 }
 
-export const ItemBriefInfo = ({ item }: ItemBriefInfoProps) => {
+export const ItemBriefInfo = ({ item, categories, onRefresh }: ItemBriefInfoProps) => {
   const navigate = useNavigate();
   const [lastMovement, setLastMovement] = useState<OperationLineView | null>(null);
 
@@ -208,6 +213,13 @@ export const ItemBriefInfo = ({ item }: ItemBriefInfoProps) => {
             <p className="text-muted-foreground">Движений не было</p>
           )}
         </div>
+
+        {/*
+          Правка, списание и архив переехали сюда со страницы «Изменить»: та
+          страница держала вторую таблицу склада только затем, чтобы выбрать в
+          ней строку, — а выбрать её можно и здесь.
+        */}
+        <ItemActions item={item} categories={categories} onDone={onRefresh} />
 
         <Button onClick={handleDetails} className="w-full gap-2" size="sm">
           Подробнее <ChevronRight className="h-4 w-4" />

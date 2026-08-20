@@ -39,7 +39,6 @@ interface AppContextType {
 
   // Переходы
   navigateToItem: (itemId: number) => void;
-  navigateToEdit: (itemId?: number) => void;
   navigateToAdd: () => void;
   navigateToDocuments: (itemId?: number) => void;
   navigateToConfigurations: (configId?: number) => void;
@@ -181,11 +180,6 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     [navigate]
   );
 
-  const navigateToEdit = useCallback(
-    (itemId?: number) => navigate(itemId ? `/edit?itemId=${itemId}` : "/edit"),
-    [navigate]
-  );
-
   const navigateToAdd = useCallback(() => {
     if (location.pathname !== "/") navigate("/");
     requestAnimationFrame(() => {
@@ -216,7 +210,6 @@ export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
     getItemById,
     getItemByBarcode,
     navigateToItem,
-    navigateToEdit,
     navigateToAdd,
     navigateToDocuments,
     navigateToConfigurations,

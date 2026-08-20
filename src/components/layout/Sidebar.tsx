@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import GlassmorphismWrapper from "@/components/theme/GlassmorphismWrapper";
 import SimpleCalculator from "@/components/calculator/SimpleCalculator";
-import { Plus, Pencil, Calculator, Settings, FileText, Wrench, Home, Hash, ScrollText } from "lucide-react";
+import { Plus, Calculator, Settings, FileText, Wrench, Home, Hash, ScrollText } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useApp } from "@/contexts/AppContext";
 
@@ -92,12 +92,11 @@ export const Sidebar = () => {
           label="Добавить" 
           onClick={handleAddClick} 
         />
-        <Item 
-          icon={Pencil} 
-          label="Изменить" 
-          onClick={() => navigate("/edit")} 
-          isActive={location.pathname === "/edit"}
-        />
+        {/*
+          Пункт «Изменить» убран: та страница держала вторую таблицу склада
+          только затем, чтобы выбрать в ней строку. Правка, списание и архив
+          теперь в панели товара на главном экране.
+        */}
         <div className="relative">
           <Item 
             icon={Calculator} 

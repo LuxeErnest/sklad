@@ -210,6 +210,18 @@ pub fn save_item_on(db: &Db, input: ItemInput) -> DbResult<i64> {
 
         match input.id {
             Some(id) => {
+                // Прежняя категория запоминается до правки: если позиция была
+                // последней в ней, категория освободилась и её больше негде
+                // удалить вручную — страницы «Изменить» нет.
+                let previous_category: Option<i64> = tx
+                    .query_row(
+                        "SELECT category_id FROM items WHERE id = ?1",
+                        params![id],
+                        |row| row.get(0),
+                    )
+                    .optional()?
+                    .flatten();
+
                 // Количество здесь не трогается намеренно: остаток меняется
                 // только операциями. Раньше правка карточки писала остаток
                 // напрямую и попутно создавала фиктивные записи о списании.
@@ -233,6 +245,12 @@ pub fn save_item_on(db: &Db, input: ItemInput) -> DbResult<i64> {
                         id
                     ],
                 )?;
+
+                if let Some(previous) = previous_category {
+                    if Some(previous) != category_id {
+                        drop_released_category(tx, previous)?;
+                    }
+                }
                 Ok(id)
             }
             None => {
@@ -628,6 +646,10 @@ pub fn list_tags(db: State<'_, Db>) -> DbResult<Vec<TagView>> {
 
 #[tauri::command]
 pub fn create_tag(name: String, db: State<'_, Db>) -> DbResult<i64> {
+    create_tag_on(&db, name)
+}
+
+pub fn create_tag_on(db: &Db, name: String) -> DbResult<i64> {
     let name = name.trim().to_string();
     if name.is_empty() {
         return Err(DbError("Название тега обязательно".to_string()));
@@ -663,16 +685,76 @@ pub fn delete_tag(tag_id: i64, db: State<'_, Db>) -> DbResult<()> {
 
 #[tauri::command]
 pub fn set_item_tags(item_id: i64, tag_ids: Vec<i64>, db: State<'_, Db>) -> DbResult<()> {
+    set_item_tags_on(&db, item_id, tag_ids)
+}
+
+pub fn set_item_tags_on(db: &Db, item_id: i64, tag_ids: Vec<i64>) -> DbResult<()> {
     db.transaction(|tx| {
+        // Какие теги позиция носила до правки — нужно, чтобы понять, какие из
+        // них она сейчас отпустила.
+        let before = tags_of_item(tx, item_id)?;
+
         tx.execute("DELETE FROM item_tags WHERE item_id = ?1", params![item_id])?;
-        for tag_id in tag_ids {
+        for tag_id in &tag_ids {
             tx.execute(
                 "INSERT OR IGNORE INTO item_tags (item_id, tag_id) VALUES (?1, ?2)",
                 params![item_id, tag_id],
             )?;
         }
+
+        drop_released_tags(tx, &before)?;
         Ok(())
     })
+}
+
+/// Теги, привязанные к позиции.
+fn tags_of_item(tx: &rusqlite::Transaction, item_id: i64) -> DbResult<Vec<i64>> {
+    let mut stmt = tx.prepare("SELECT tag_id FROM item_tags WHERE item_id = ?1")?;
+    let rows = stmt.query_map(params![item_id], |row| row.get::<_, i64>(0))?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+}
+
+/// Удаляет теги из списка, которые больше никем не используются.
+///
+/// Удаляются только те, что были на позиции до правки: тег, созданный впрок и
+/// ни разу никому не назначенный, остаётся. Иначе завести тег заранее стало бы
+/// невозможно — он исчезал бы сразу после создания.
+///
+/// Отдельного места, где теги удаляют вручную, больше нет: страница
+/// «Изменить», где стояли эти кнопки, убрана.
+fn drop_released_tags(tx: &rusqlite::Transaction, candidates: &[i64]) -> DbResult<()> {
+    for tag_id in candidates {
+        let used: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM item_tags WHERE tag_id = ?1",
+            params![tag_id],
+            |row| row.get(0),
+        )?;
+        if used == 0 {
+            tx.execute("DELETE FROM tags WHERE id = ?1", params![tag_id])?;
+        }
+    }
+    Ok(())
+}
+
+/// Удаляет категорию, если её отпустила последняя позиция.
+///
+/// Категория с вложенными не удаляется даже пустой: она остаётся узлом дерева,
+/// и без неё вложенные потеряли бы своё место.
+fn drop_released_category(tx: &rusqlite::Transaction, category_id: i64) -> DbResult<()> {
+    let items: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM items WHERE category_id = ?1",
+        params![category_id],
+        |row| row.get(0),
+    )?;
+    let children: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM categories WHERE parent_id = ?1",
+        params![category_id],
+        |row| row.get(0),
+    )?;
+    if items == 0 && children == 0 {
+        tx.execute("DELETE FROM categories WHERE id = ?1", params![category_id])?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
