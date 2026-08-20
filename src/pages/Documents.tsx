@@ -21,6 +21,7 @@ import { getDocuments, addDocument, deleteDocument as dbDeleteDocument, updateDo
 import { getErrorMessage } from "@/services/errorHandler";
 import { useApp } from "@/contexts/AppContext";
 import { toast } from "@/hooks/use-toast";
+import { formatFileSize } from "@/lib/utils";
 import { useConfirm } from "@/components/common/ConfirmDialog";
 import { useSearchParams } from "react-router-dom";
 import { InventoryItem } from "@/components/inventory/InventoryTable";
@@ -98,14 +99,14 @@ const Documents = () => {
       id: r.id,
       name: r.name || "Без названия",
       type: (r.type || "").toString(),
-      size: `${(Number(r.sizeBytes || 0) / (1024 * 1024)).toFixed(1)} MB`,
+      size: formatFileSize(Number(r.sizeBytes || 0)),
       componentIds,
       componentNames: componentIds
         .map((id) => items.find((c) => c.id === id)?.name)
         .filter(Boolean)
         .join(", "),
       category: r.category || "Без категории",
-      uploadedBy: r.uploadedBy || "Пользователь",
+      uploadedBy: r.uploadedBy || "—",
       uploadedAt: (r.uploadedAt || "").toString().split("T")[0],
       description: r.description || "",
       tags: r.tags ?? [],
@@ -205,9 +206,14 @@ const Documents = () => {
                            (doc.description || '').toLowerCase().includes(search.toLowerCase()) ||
                            (Array.isArray(doc.tags) ? doc.tags : []).some((tag: string) => tag.toLowerCase().includes(search.toLowerCase()));
         const matchCategory = categoryFilter === "all" || doc.category === categoryFilter;
-        const matchComponent = componentFilter === "all" || 
-          (Array.isArray(doc.componentIds) ? doc.componentIds : []).some((id: number) => id.toString() === componentFilter) ||
-          (doc.componentNames || '').toLowerCase().includes(componentFilter.toLowerCase());
+        // Отбор идёт строго по идентификатору. Прежде он вдобавок сравнивал
+        // идентификатор с названиями компонентов, и документ, в названии
+        // компонента которого есть «6», попадал в отбор по компоненту №6.
+        const matchComponent =
+          componentFilter === "all" ||
+          (Array.isArray(doc.componentIds) ? doc.componentIds : []).some(
+            (id: number) => id.toString() === componentFilter
+          );
         return matchSearch && matchCategory && matchComponent;
       });
     } catch (error) {
@@ -250,7 +256,8 @@ const Documents = () => {
         category: data.category,
         description: data.description || '',
         tags: data.tags ? data.tags.split(',').map(t => t.trim()) : [],
-        uploadedBy: 'Текущий пользователь',
+        // Пользователей в приложении нет, выдумывать автора незачем.
+        uploadedBy: undefined,
         dataBase64: base64,
       });
       
@@ -353,12 +360,10 @@ const Documents = () => {
     return ['pdf', 'jpg', 'jpeg', 'png', 'txt'].includes(type.toLowerCase());
   };
 
-  const summary = { 
-    name: "Документы", 
-    quantity: Array.isArray(filteredDocuments) ? filteredDocuments.length : 0, 
-    location: "База данных", 
-    category: "Файлы" 
-  };
+  // Полоса сводки рассчитана на выбранный товар, здесь его нет. Прежние
+  // значения — «Расположение: База данных» и «Категория: Файлы» — были
+  // выдуманы, причём документы как раз лежат на диске, а не в базе.
+  const summary = null;
 
   // Early return if context is not available (shouldn't happen, but just in case)
   if (!context) {

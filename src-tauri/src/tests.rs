@@ -662,3 +662,34 @@ fn правка_конфигурации_меняет_категорию_рез�
         "правка должна менять категорию результата"
     );
 }
+
+/// Документы: колонка расширения и связь с тегами.
+#[test]
+fn схема_документов_знает_расширение_и_теги() {
+    let db = db();
+    db.with(|conn| {
+        // Колонка переименована: раньше называлась mime и хранила расширение.
+        let есть_extension: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('documents') WHERE name = 'extension'",
+            [],
+            |r| r.get(0),
+        )?;
+        assert_eq!(есть_extension, 1, "у документов должна быть колонка extension");
+
+        let остался_mime: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('documents') WHERE name = 'mime'",
+            [],
+            |r| r.get(0),
+        )?;
+        assert_eq!(остался_mime, 0, "колонки mime больше быть не должно");
+
+        let есть_теги: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'document_tags'",
+            [],
+            |r| r.get(0),
+        )?;
+        assert_eq!(есть_теги, 1, "теги документов должно быть где хранить");
+        Ok(())
+    })
+    .unwrap();
+}

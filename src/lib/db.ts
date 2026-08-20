@@ -585,6 +585,24 @@ export async function createTag(name: string): Promise<number> {
   return id;
 }
 
+/**
+ * Превращает названия тегов в их идентификаторы, заводя отсутствующие.
+ *
+ * Нужно там, где теги вводят строкой через запятую: человек не обязан знать,
+ * существует тег или нет.
+ */
+export async function tagIdsByNames(names: string[]): Promise<number[]> {
+  const wanted = [...new Set(names.map((n) => n.trim()).filter(Boolean))];
+  if (!wanted.length) return [];
+  const existing = await getTags();
+  const ids: number[] = [];
+  for (const name of wanted) {
+    const found = existing.find((t) => t.name.toLowerCase() === name.toLowerCase());
+    ids.push(found ? found.id : await createTag(name));
+  }
+  return ids;
+}
+
 export async function updateTag(id: number, name: string): Promise<void> {
   await invoke("update_tag", { tagId: id, name });
   notify("componentsUpdated");
@@ -805,26 +823,38 @@ export async function getDocuments() {
     ...d,
     componentIds: d.itemIds,
     sizeBytes: d.sizeBytes,
-    type: d.mime ?? "",
-    tags: [],
+    type: d.extension ?? "",
+    tags: d.tags,
     uploadedAt: (d.uploadedAt || "").split("T")[0],
   }));
 }
 
+/**
+ * Сохраняет документ.
+ *
+ * `type` — расширение файла. Раньше оно уходило в поле, названное mime, и Rust
+ * пытался вывести из него расширение как из MIME-типа: «xlsx» не подходило ни
+ * под одно правило, и файл на диске получал имя «.bin».
+ *
+ * Теги раньше принимались и молча выбрасывались — хранить их было негде.
+ * Названия превращаются в теги: существующие находятся, новых нет — создаются.
+ */
 export async function addDocument(payload: {
   name: string; type: string; sizeBytes: number; componentIds: number[];
   category: string; description?: string; tags?: string[]; uploadedBy?: string;
   dataBase64: string;
 }) {
+  const tagIds = payload.tags?.length ? await tagIdsByNames(payload.tags) : [];
   const id = await invoke<number>("add_document", {
     input: {
       name: payload.name,
       dataBase64: payload.dataBase64,
-      mime: payload.type,
+      extension: payload.type,
       category: payload.category,
       description: payload.description,
       uploadedBy: payload.uploadedBy,
       itemIds: payload.componentIds,
+      tagIds,
     },
   });
   notify("documentsUpdated");
@@ -852,7 +882,7 @@ export async function getDocumentsByComponentId(componentId: number) {
   return docs.map((d) => ({
     id: d.id,
     name: d.name,
-    type: d.mime ?? "",
+    type: d.extension ?? "",
     category: d.category ?? "",
     sizeBytes: d.sizeBytes,
   }));
@@ -862,7 +892,7 @@ export async function getCertificatesByComponentId(componentId: number) {
   const docs = await invoke<DocumentView[]>("item_documents", { itemId: componentId });
   return docs
     .filter((d) => (d.category || "").toLowerCase().includes("сертификат"))
-    .map((d) => ({ id: d.id, name: d.name, type: d.mime ?? "", category: d.category ?? "" }));
+    .map((d) => ({ id: d.id, name: d.name, type: d.extension ?? "", category: d.category ?? "" }));
 }
 
 // ---------- Сводка, целостность, обслуживание ----------

@@ -20,7 +20,9 @@ pub struct DocumentView {
     #[ts(type = "number")]
     pub id: i64,
     pub name: String,
-    pub mime: Option<String>,
+    /// Расширение файла — «pdf», «xlsx». Раньше поле называлось mime и хранило
+    /// то же самое, из-за чего файл на диске получал имя «.bin».
+    pub extension: Option<String>,
     #[ts(type = "number")]
     pub size_bytes: i64,
     pub category: Option<String>,
@@ -29,6 +31,7 @@ pub struct DocumentView {
     pub uploaded_at: String,
     #[ts(type = "number[]")]
     pub item_ids: Vec<i64>,
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, ts_rs::TS)]
@@ -39,7 +42,7 @@ pub struct DocumentInput {
     /// Содержимое файла в base64 — так его отдаёт файловый ввод в браузере.
     pub data_base64: String,
     #[serde(default)]
-    pub mime: Option<String>,
+    pub extension: Option<String>,
     #[serde(default)]
     pub category: Option<String>,
     #[serde(default)]
@@ -49,6 +52,9 @@ pub struct DocumentInput {
     #[serde(default)]
     #[ts(type = "number[]")]
     pub item_ids: Vec<i64>,
+    #[serde(default)]
+    #[ts(type = "number[]")]
+    pub tag_ids: Vec<i64>,
 }
 
 fn documents_dir<R: Runtime>(app: &AppHandle<R>) -> DbResult<PathBuf> {
@@ -61,29 +67,25 @@ fn documents_dir<R: Runtime>(app: &AppHandle<R>) -> DbResult<PathBuf> {
     Ok(dir)
 }
 
-fn extension_for(name: &str, mime: Option<&str>) -> String {
-    let ok =
-        |s: &str| !s.is_empty() && s.len() <= 8 && s.chars().all(|c| c.is_ascii_alphanumeric());
-    if let Some((_, ext)) = name.rsplit_once('.') {
-        if ok(ext) {
-            return format!(".{}", ext.to_ascii_lowercase());
-        }
-    }
-    match mime {
-        Some(m) if m.contains("pdf") => ".pdf".into(),
-        Some(m) if m.contains("png") => ".png".into(),
-        Some(m) if m.contains("jpeg") => ".jpg".into(),
-        Some(m) if m.contains("sheet") => ".xlsx".into(),
-        Some(m) if m.contains("wordprocessing") => ".docx".into(),
+/// Расширение для файла на диске.
+///
+/// Берётся то, что пришло от формы, а не угадывается по MIME-типу: угадывание и
+/// было причиной, по которой xlsx оказывался на диске как «.bin». Значение
+/// проверяется, потому что попадает в имя файла.
+fn extension_for(extension: Option<&str>) -> String {
+    let ok = |s: &str| !s.is_empty() && s.len() <= 8 && s.chars().all(|c| c.is_ascii_alphanumeric());
+    match extension.map(str::trim) {
+        Some(e) if ok(e) => format!(".{}", e.to_ascii_lowercase()),
         _ => ".bin".into(),
     }
 }
+
 
 #[tauri::command]
 pub fn list_documents(db: State<'_, Db>) -> DbResult<Vec<DocumentView>> {
     db.with(|conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, name, mime, size_bytes, category, description, uploaded_by, uploaded_at
+            "SELECT id, name, extension, size_bytes, category, description, uploaded_by, uploaded_at
                FROM documents ORDER BY uploaded_at DESC",
         )?;
         let mut docs: Vec<DocumentView> = stmt
@@ -91,13 +93,14 @@ pub fn list_documents(db: State<'_, Db>) -> DbResult<Vec<DocumentView>> {
                 Ok(DocumentView {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    mime: row.get(2)?,
+                    extension: row.get(2)?,
                     size_bytes: row.get(3)?,
                     category: row.get(4)?,
                     description: row.get(5)?,
                     uploaded_by: row.get(6)?,
                     uploaded_at: row.get(7)?,
                     item_ids: Vec::new(),
+                    tags: Vec::new(),
                 })
             })?
             .collect::<rusqlite::Result<_>>()?;
@@ -111,9 +114,24 @@ pub fn list_documents(db: State<'_, Db>) -> DbResult<Vec<DocumentView>> {
             let (document_id, item_id) = row?;
             links.entry(document_id).or_default().push(item_id);
         }
+        let mut tag_stmt = conn.prepare(
+            "SELECT dt.document_id, t.name FROM document_tags dt JOIN tags t ON t.id = dt.tag_id",
+        )?;
+        let mut tags = std::collections::HashMap::<i64, Vec<String>>::new();
+        for row in tag_stmt
+            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))?
+        {
+            let (document_id, tag) = row?;
+            tags.entry(document_id).or_default().push(tag);
+        }
+        drop(tag_stmt);
+
         for doc in &mut docs {
             if let Some(ids) = links.remove(&doc.id) {
                 doc.item_ids = ids;
+            }
+            if let Some(names) = tags.remove(&doc.id) {
+                doc.tags = names;
             }
         }
         Ok(docs)
@@ -149,7 +167,7 @@ pub fn add_document<R: Runtime>(
     }
 
     let digest = format!("{:x}", Sha256::digest(&bytes));
-    let rel_path = format!("{}{}", digest, extension_for(&name, input.mime.as_deref()));
+    let rel_path = format!("{}{}", digest, extension_for(input.extension.as_deref()));
     let target = documents_dir(&app)?.join(&rel_path);
     // Одинаковое содержимое хранится один раз: в исходной базе половина
     // документов оказалась повторной загрузкой того же файла.
@@ -160,13 +178,13 @@ pub fn add_document<R: Runtime>(
     db.transaction(|tx| {
         tx.execute(
             "INSERT INTO documents
-                (name, rel_path, mime, size_bytes, sha256, category, description,
+                (name, rel_path, extension, size_bytes, sha256, category, description,
                  uploaded_by, uploaded_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 name,
                 rel_path,
-                input.mime,
+                input.extension,
                 bytes.len() as i64,
                 digest,
                 input.category,
@@ -180,6 +198,12 @@ pub fn add_document<R: Runtime>(
             tx.execute(
                 "INSERT OR IGNORE INTO document_items (document_id, item_id) VALUES (?1, ?2)",
                 params![document_id, item_id],
+            )?;
+        }
+        for tag_id in &input.tag_ids {
+            tx.execute(
+                "INSERT OR IGNORE INTO document_tags (document_id, tag_id) VALUES (?1, ?2)",
+                params![document_id, tag_id],
             )?;
         }
         Ok(document_id)
@@ -272,8 +296,11 @@ pub fn read_document<R: Runtime>(
 pub fn item_documents(item_id: i64, db: State<'_, Db>) -> DbResult<Vec<DocumentView>> {
     db.with(|conn| {
         let mut stmt = conn.prepare(
-            "SELECT d.id, d.name, d.mime, d.size_bytes, d.category, d.description,
-                    d.uploaded_by, d.uploaded_at
+            "SELECT d.id, d.name, d.extension, d.size_bytes, d.category, d.description,
+                    d.uploaded_by, d.uploaded_at,
+                    (SELECT GROUP_CONCAT(t.name, CHAR(31))
+                       FROM document_tags dt JOIN tags t ON t.id = dt.tag_id
+                      WHERE dt.document_id = d.id)
                FROM documents d
                JOIN document_items di ON di.document_id = d.id
               WHERE di.item_id = ?1
@@ -283,13 +310,19 @@ pub fn item_documents(item_id: i64, db: State<'_, Db>) -> DbResult<Vec<DocumentV
             Ok(DocumentView {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                mime: row.get(2)?,
+                extension: row.get(2)?,
                 size_bytes: row.get(3)?,
                 category: row.get(4)?,
                 description: row.get(5)?,
                 uploaded_by: row.get(6)?,
                 uploaded_at: row.get(7)?,
                 item_ids: vec![item_id],
+                // Разделитель — управляющий символ: в названии тега его быть
+                // не может, в отличие от запятой.
+                tags: row
+                    .get::<_, Option<String>>(8)?
+                    .map(|s| s.split('\u{1f}').map(str::to_string).collect())
+                    .unwrap_or_default(),
             })
         })?;
         Ok(docs.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -346,4 +379,32 @@ pub fn save_item_image<R: Runtime>(app: AppHandle<R>, data_base64: String) -> Db
         std::fs::write(&target, &bytes)?;
     }
     Ok(target.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extension_for;
+
+    /// Расширение берётся как есть — именно его угадывание и ломало файлы.
+    ///
+    /// Прежняя версия принимала MIME-тип и сопоставляла его с образцами. Форма
+    /// присылала расширение, «xlsx» не подходило ни под одно правило, и файл
+    /// оказывался на диске с именем «.bin» — открыть его было нечем.
+    #[test]
+    fn расширение_берётся_из_переданного() {
+        assert_eq!(extension_for(Some("xlsx")), ".xlsx");
+        assert_eq!(extension_for(Some("docx")), ".docx");
+        assert_eq!(extension_for(Some("PDF")), ".pdf", "регистр приводится к нижнему");
+        assert_eq!(extension_for(Some("  png  ")), ".png", "пробелы обрезаются");
+    }
+
+    /// Значение попадает в имя файла, поэтому мусор не пропускается.
+    #[test]
+    fn негодное_расширение_даёт_bin() {
+        assert_eq!(extension_for(None), ".bin");
+        assert_eq!(extension_for(Some("")), ".bin");
+        assert_eq!(extension_for(Some("../secret")), ".bin", "путь не расширение");
+        assert_eq!(extension_for(Some("сертификат")), ".bin", "только латиница и цифры");
+        assert_eq!(extension_for(Some("verylongextension")), ".bin");
+    }
 }

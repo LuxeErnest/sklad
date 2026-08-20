@@ -25,3 +25,16 @@ export function plural(n: number, one: string, few: string, many: string): strin
   if (mod10 >= 2 && mod10 <= 4) return few;
   return many;
 }
+
+/**
+ * Размер файла в понятных единицах.
+ *
+ * Раньше всё делилось на мегабайты и округлялось до одного знака, поэтому файл
+ * на одиннадцать килобайт показывался как «0.0 MB».
+ */
+export function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 Б";
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} КБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+}

@@ -4,4 +4,4 @@ export type DocumentInput = { name: string,
 /**
  * Содержимое файла в base64 — так его отдаёт файловый ввод в браузере.
  */
-dataBase64: string, mime: string | null, category: string | null, description: string | null, uploadedBy: string | null, itemIds: number[], };
+dataBase64: string, extension: string | null, category: string | null, description: string | null, uploadedBy: string | null, itemIds: number[], tagIds: number[], };

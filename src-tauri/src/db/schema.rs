@@ -4,7 +4,7 @@
 //! Каждая миграция выполняется в собственной транзакции. Менять уже
 //! выпущенную миграцию нельзя — только добавлять следующую.
 
-pub static MIGRATIONS: &[&str] = &[V1_INITIAL, V2_NORMALIZE_TIMESTAMPS];
+pub static MIGRATIONS: &[&str] = &[V1_INITIAL, V2_NORMALIZE_TIMESTAMPS, V3_DOCUMENT_EXTENSION_AND_TAGS];
 
 const V1_INITIAL: &str = r#"
 -- ---------- Справочники ----------
@@ -198,4 +198,24 @@ UPDATE documents SET uploaded_at = CASE
 -- индекса SQLite перебирает все строки журнала и строит временное дерево
 -- сортировки, чтобы отдать последние пятьсот.
 CREATE INDEX IF NOT EXISTS operations_at_id ON operations(performed_at DESC, id DESC);
+"#;
+
+/// Расширение файла вместо мнимого MIME и теги для документов.
+///
+/// Колонка называлась `mime`, а хранила расширение — «xlsx», «docx». Rust по
+/// ней же определял имя файла на диске, ожидая настоящий MIME-тип: «xlsx» не
+/// подходило ни под одно правило, и загруженный файл получал имя `.bin`.
+/// Колонка переименована по тому, что в ней на самом деле лежит.
+///
+/// Теги документов до сих пор были заглушкой: поле в форме заполнялось, но
+/// хранить их было негде. Связь устроена так же, как у изделий, и опирается на
+/// ту же таблицу тегов.
+const V3_DOCUMENT_EXTENSION_AND_TAGS: &str = r#"
+ALTER TABLE documents RENAME COLUMN mime TO extension;
+
+CREATE TABLE document_tags (
+    document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    tag_id      INTEGER NOT NULL REFERENCES tags(id)      ON DELETE CASCADE,
+    PRIMARY KEY (document_id, tag_id)
+);
 "#;
