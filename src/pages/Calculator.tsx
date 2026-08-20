@@ -178,13 +178,10 @@ const Calculator = () => {
     setSelectedItems({});
   };
 
-  // Function to download warehouse report as Excel
-  const summary = { 
-    name: "Калькулятор склада", 
-    quantity: warehouseAnalytics.canBuildHighPriority, 
-    location: "Анализ", 
-    category: "Калькулятор" 
-  };
+  // Полоса сводки в шапке рассчитана на выбранный товар, а здесь его нет:
+  // прежние значения — «Расположение: Анализ», «Категория: Калькулятор» и
+  // счётчик высокоприоритетных, которого не существует, — были выдуманы.
+  const summary = null;
 
   return (
     <div className="min-h-screen relative">

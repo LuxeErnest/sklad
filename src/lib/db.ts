@@ -19,6 +19,7 @@ import type {
   ItemView,
   LocationView,
   OperationLineView,
+  WarehouseStatistics,
 } from "@/lib/generated";
 
 // Типы приходят из Rust: описание данных существует в одном месте, и
@@ -854,11 +855,9 @@ export async function getCertificatesByComponentId(componentId: number) {
 // ---------- Сводка, целостность, обслуживание ----------
 
 export async function getWarehouseStatistics() {
-  const s = await invoke<{
-    totalItems: number; totalUnits: number; totalValue: number;
-    lowStockItems: number; outOfStockItems: number; totalLocations: number;
-    totalConfigurations: number; assembledUnits: number; operationsTotal: number;
-  }>("warehouse_statistics");
+  // Тип берётся сгенерированный, а не описанный здесь руками: прежнее описание
+  // отставало от Rust — в нём не было scrappedUnits, и поле молча терялось.
+  const s = await invoke<WarehouseStatistics>("warehouse_statistics");
   return {
     totalComponents: s.totalItems,
     totalValue: s.totalValue,
@@ -866,7 +865,7 @@ export async function getWarehouseStatistics() {
     outOfStockItems: s.outOfStockItems,
     totalConfigurations: s.totalConfigurations,
     totalBuilds: s.assembledUnits,
-    totalScrapped: 0,
+    totalScrapped: s.scrappedUnits,
     totalUnits: s.totalUnits,
     totalLocations: s.totalLocations,
     operationsTotal: s.operationsTotal,

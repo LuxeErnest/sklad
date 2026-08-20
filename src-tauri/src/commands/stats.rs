@@ -25,6 +25,13 @@ pub struct WarehouseStatistics {
     pub assembled_units: i64,
     #[ts(type = "number")]
     pub operations_total: i64,
+    /// Сколько единиц списано за всё время.
+    ///
+    /// Раньше это число фронтенд подставлял нулём: в сводке из Rust его не
+    /// было, а на экране статистики оно показывалось как «Списано компонентов».
+    /// При семи списаниях в журнале там стоял ноль.
+    #[ts(type = "number")]
+    pub scrapped_units: i64,
 }
 
 #[tauri::command]
@@ -56,7 +63,10 @@ pub fn warehouse_statistics_on(db: &Db) -> DbResult<WarehouseStatistics> {
                (SELECT COALESCE(SUM(s.quantity), 0)
                   FROM stock s
                  WHERE s.item_id IN (SELECT result_item_id FROM configurations)),
-               (SELECT COUNT(*) FROM operations)",
+               (SELECT COUNT(*) FROM operations),
+               (SELECT COALESCE(SUM(ol.quantity), 0)
+                  FROM operation_lines ol JOIN operations o ON o.id = ol.operation_id
+                 WHERE o.kind = 'writeoff')",
             [],
             |row| {
                 Ok(WarehouseStatistics {
@@ -69,6 +79,7 @@ pub fn warehouse_statistics_on(db: &Db) -> DbResult<WarehouseStatistics> {
                     total_configurations: row.get(6)?,
                     assembled_units: row.get(7)?,
                     operations_total: row.get(8)?,
+                    scrapped_units: row.get(9)?,
                 })
             },
         )?;
