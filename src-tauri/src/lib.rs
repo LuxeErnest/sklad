@@ -91,6 +91,11 @@ pub fn run() {
             stats::dead_stock,
             stats::repair_integrity
         ])
+        // Уведомления уходят в центр уведомлений Windows. Всплывающие окна
+        // внутри приложения хороши, пока оно на переднем плане; сообщение об
+        // успешно проведённой операции человек должен увидеть и тогда, когда
+        // смотрит в другое окно.
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

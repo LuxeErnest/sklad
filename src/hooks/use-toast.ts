@@ -5,6 +5,7 @@ import type {
   ToastProps,
 } from "@/components/ui/toast"
 import { preferences } from "@/lib/preferences"
+import { notifySystem } from "@/lib/systemNotify"
 
 const TOAST_LIMIT = 1
 const TOAST_REMOVE_DELAY = 1000000
@@ -143,9 +144,20 @@ type Toast = Omit<ToasterToast, "id">
 function toast({ ...props }: Toast) {
   const id = genId()
 
-  // Сообщения об успехе можно отключить в настройках, сообщения об ошибках —
-  // нет: скрыть от человека, что действие не выполнилось, значит соврать ему.
-  if (props.variant !== "destructive" && !preferences().successToasts) {
+  // Сообщения об успехе уходят в центр уведомлений Windows, а не всплывают в
+  // окне: приложение может быть свёрнуто, а знать, что операция прошла, нужно.
+  // Отключаются в настройках.
+  //
+  // Сообщения об ошибках здесь не участвуют — их показывает само приложение,
+  // сразу и на месте: скрыть от человека, что действие не выполнилось, значит
+  // соврать ему, а отложить до центра уведомлений — почти то же самое.
+  if (props.variant !== "destructive") {
+    if (!preferences().successToasts) {
+      return { id, dismiss: () => undefined, update: () => undefined }
+    }
+    const заголовок = typeof props.title === "string" ? props.title : "Готово"
+    const текст = typeof props.description === "string" ? props.description : undefined
+    notifySystem(заголовок, текст)
     return { id, dismiss: () => undefined, update: () => undefined }
   }
 

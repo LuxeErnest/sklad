@@ -7,10 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 
 import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
 import { Settings, Database } from "lucide-react";
 import { useState } from "react";
-import { useTheme } from "next-themes";
 import { usePreference } from "@/lib/preferences";
 import { StatusCard } from "@/components/database/StatusCard";
 import { StorageCard } from "@/components/database/StorageCard";
@@ -26,7 +24,6 @@ const SettingsPage = () => {
   // next-themes, остальное — из настроек интерфейса в localStorage. Раньше все
   // три жили в useState этой страницы: сбрасывались при переходе на другой
   // экран и ни на что не влияли.
-  const { theme, setTheme } = useTheme();
   const [successToasts, setSuccessToasts] = usePreference("successToasts");
 
   const summary = { 
@@ -75,10 +72,12 @@ const SettingsPage = () => {
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
-                      <Label>Сообщения об успешных действиях</Label>
+                      <Label>Уведомления Windows об успешных действиях</Label>
                       <p className="text-sm text-muted-foreground">
-                        Всплывающие подтверждения после сохранения и списания.
-                        Сообщения об ошибках показываются всегда.
+                        Подтверждения после сохранения, списания и сборки приходят
+                        в центр уведомлений Windows — их видно, даже когда окно
+                        свёрнуто. Сообщения об ошибках показываются в приложении
+                        всегда и этой настройке не подчиняются.
                       </p>
                     </div>
                     <Switch
@@ -87,20 +86,6 @@ const SettingsPage = () => {
                     />
                   </div>
 
-                  <Separator />
-
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>Тёмная тема</Label>
-                      <p className="text-sm text-muted-foreground">
-                        То же, что и переключатель в шапке
-                      </p>
-                    </div>
-                    <Switch
-                      checked={theme === "dark"}
-                      onCheckedChange={(on) => setTheme(on ? "dark" : "light")}
-                    />
-                  </div>
                 </CardContent>
               </Card>
             </div>
